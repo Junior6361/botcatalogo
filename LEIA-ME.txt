@@ -1,10 +1,24 @@
-Atualização dos botões do catálogo
+CATÁLOGO DE JOGOS E MODS — VERSÃO COM PAINÉIS ATUALIZÁVEIS
 
-Linha 1: Catálogo de jogos | Catálogo de mods
-Linha 2: Enviar jogo | Enviar mod
-Linha 3: Buscar jogo | Buscar mod
-Linha 4: Admin
+Comandos principais
+/catalogo  Publica o painel principal. Ao executar novamente no mesmo canal, atualiza a publicação existente em vez de criar outra.
+/mods      Abre o catálogo de mods em uma resposta privada para evitar que a paginação de uma pessoa altere a tela de outras.
+/painelmods  Abre a administração privada dos mods.
+/enviarmod   Envia um mod para aprovação.
+/adicionarmod  (Admin) Cadastra um mod diretamente.
 
-Substitua o bot.py do repositório por este arquivo e faça commit na branch main.
-Depois do deploy, execute /catalogo novamente para publicar a nova mensagem.
-Mantenha jogos.db, as pastas de capas e as variáveis de ambiente.
+Experiência visual e navegação
+- O painel principal e as telas administrativas textuais usam Markdown.
+- Capas, grades de capas e fichas com imagem permanecem em embeds quando isso é necessário para apresentar as imagens.
+- Filtros, seleções, paginação e botões de retorno editam a mensagem atual sempre que possível.
+- As telas iniciadas por usuários são efêmeras quando apropriado, evitando poluir o canal e evitando que usuários alterem a navegação uns dos outros.
+- A publicação do /catalogo guarda o ID em jogos.db e procura uma publicação antiga do catálogo para reutilizá-la após a atualização.
+
+Instalação / atualização
+1. Instale as dependências: pip install -r requirements.txt
+2. Mantenha o arquivo jogos.db, as pastas capas e capas_mods e as variáveis de ambiente.
+3. Configure DISCORD_TOKEN. GUILD_ID é opcional.
+4. Execute python bot.py.
+5. Execute /catalogo para publicar ou atualizar o painel no canal desejado.
+
+Dependências: discord.py >= 2.7 e Pillow >= 10.0.

@@ -1,2 +1,2 @@
-discord.py>=2.3
+discord.py>=2.7
 Pillow>=10.0
