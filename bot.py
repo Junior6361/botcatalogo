@@ -699,56 +699,52 @@ class CanalView(discord.ui.View):
 
 
 class AdminView(discord.ui.View):
+    """Painel administrativo compacto: ações agrupadas em um menu único."""
     def __init__(self):
         super().__init__(timeout=900)
-        n = contar_pendentes()
-        self.pendentes.label = f"Pendentes ({n})"
-        if n:
-            self.pendentes.style = discord.ButtonStyle.success
+        n_jogos = contar_pendentes()
+        n_mods = contar_mods_pendentes()
+        options = [
+            discord.SelectOption(label="Adicionar jogo", value="add_game", emoji="➕", description="Cadastrar um jogo"),
+            discord.SelectOption(label="Editar jogo", value="edit_game", emoji="✏️", description="Alterar dados de um jogo"),
+            discord.SelectOption(label="Remover jogo", value="delete_game", emoji="🗑️", description="Excluir um jogo"),
+            discord.SelectOption(label=f"Aprovar jogos ({n_jogos})", value="pending_games", emoji="🎮", description="Revisar envios de jogos"),
+            discord.SelectOption(label="Gerenciar mods", value="mods", emoji="🧩", description="Adicionar, editar, remover e moderar mods"),
+            discord.SelectOption(label=f"Aprovar mods ({n_mods})", value="pending_mods", emoji="📥", description="Revisar envios de mods"),
+            discord.SelectOption(label="Canal de avisos", value="channel", emoji="📢", description="Configurar notificações da moderação"),
+        ]
+        sel = discord.ui.Select(placeholder="Escolha uma ação administrativa...", options=options)
+        sel.callback = self.escolher
+        self.add_item(sel)
 
-    @discord.ui.button(label="Adicionar jogo", emoji="➕", style=discord.ButtonStyle.success, row=0)
-    async def adicionar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        emb = discord.Embed(
-            title="➕ Adicionar jogo",
-            description="Primeiro escolha a **plataforma de origem** do jogo. Depois abrirá um formulário.",
-            color=discord.Color.green(),
-        )
-        await interaction.response.edit_message(embed=emb, attachments=[], view=PlataformaPickView())
-
-    @discord.ui.button(label="Editar jogo", emoji="✏️", style=discord.ButtonStyle.primary, row=0)
-    async def editar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        v = CatalogView(mode="editar")
-        await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
-
-    @discord.ui.button(label="Remover jogo", emoji="🗑", style=discord.ButtonStyle.danger, row=0)
-    async def remover(self, interaction: discord.Interaction, button: discord.ui.Button):
-        v = CatalogView(mode="remover")
-        await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
-
-    @discord.ui.button(label="Pendentes", emoji="📥", style=discord.ButtonStyle.secondary, row=1)
-    async def pendentes(self, interaction: discord.Interaction, button: discord.ui.Button):
-        v = CatalogView(mode="pendentes")
-        await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
-
-    @discord.ui.button(label="Admin mods", emoji="🧩", style=discord.ButtonStyle.primary, row=1)
-    async def admin_mods(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def escolher(self, interaction: discord.Interaction):
         if not eh_admin(interaction):
-            await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
+            await interaction.response.send_message("⛔ Apenas administradores podem usar este painel.", ephemeral=True)
             return
-        emb = discord.Embed(
-            title="🧩 Administração de mods",
-            description="Gerencie o catálogo de mods separadamente dos jogos.",
-            color=discord.Color.dark_teal(),
-        )
-        await interaction.response.edit_message(embed=emb, attachments=[], view=ModAdminView())
-
-    @discord.ui.button(label="Canal de avisos", emoji="📢", style=discord.ButtonStyle.secondary, row=1)
-    async def canal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        atual = get_config("canal_avisos")
-        texto = (f"Canal atual: <#{atual}>\n\n" if atual else "Nenhum canal definido ainda.\n\n")
-        texto += "Escolha onde o bot deve avisar quando alguém enviar um jogo para aprovação."
-        emb = discord.Embed(title="📢 Canal de avisos", description=texto, color=discord.Color.orange())
-        await interaction.response.edit_message(embed=emb, attachments=[], view=CanalView())
+        action = interaction.data.get("values", [""])[0]
+        if action == "add_game":
+            emb = discord.Embed(title="➕ Adicionar jogo", description="Escolha a plataforma de origem para abrir o formulário.", color=discord.Color.green())
+            view = PlataformaPickView()
+            await interaction.response.edit_message(embed=emb, attachments=[], view=view)
+        elif action == "edit_game":
+            v = CatalogView(mode="editar")
+            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        elif action == "delete_game":
+            v = CatalogView(mode="remover")
+            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        elif action == "pending_games":
+            v = CatalogView(mode="pendentes")
+            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        elif action == "mods":
+            await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma ação no menu para gerenciar o catálogo de mods.", color=discord.Color.dark_teal()), attachments=[], view=ModAdminView())
+        elif action == "pending_mods":
+            v = ModPendentesView()
+            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        elif action == "channel":
+            atual = get_config("canal_avisos")
+            texto = (f"Canal atual: <#{atual}>\n\n" if atual else "Nenhum canal definido ainda.\n\n")
+            texto += "Escolha onde avisar sobre envios que aguardam aprovação."
+            await interaction.response.edit_message(embed=discord.Embed(title="📢 Canal de avisos", description=texto, color=discord.Color.orange()), attachments=[], view=CanalView())
 
 
 class EditarView(discord.ui.View):
@@ -950,6 +946,11 @@ def listar_mods(query=None, page=0):
             params + [PAGE_SIZE, page * PAGE_SIZE],
         ).fetchall()
     return rows, total
+
+
+def contar_mods_pendentes():
+    with db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM mods WHERE status = 'pendente'").fetchone()[0]
 
 
 def get_mod(mod_id):
@@ -1287,39 +1288,39 @@ class ModDecisaoView(discord.ui.View):
 
 
 class ModAdminView(discord.ui.View):
+    """Ações de mods reunidas em um menu, sem cascata de botões."""
     def __init__(self):
         super().__init__(timeout=900)
+        n = contar_mods_pendentes()
+        options = [
+            discord.SelectOption(label="Adicionar mod", value="add", emoji="➕", description="Cadastrar um mod diretamente"),
+            discord.SelectOption(label="Editar mod", value="edit", emoji="✏️", description="Alterar dados de um mod existente"),
+            discord.SelectOption(label="Remover mod", value="remove", emoji="🗑️", description="Excluir um mod do catálogo"),
+            discord.SelectOption(label=f"Envios pendentes ({n})", value="pending", emoji="📥", description="Aprovar ou rejeitar envios dos membros"),
+            discord.SelectOption(label="Voltar ao painel principal", value="back", emoji="⬅️", description="Voltar às opções de jogos e configuração"),
+        ]
+        sel = discord.ui.Select(placeholder="Gerenciar catálogo de mods...", options=options)
+        sel.callback = self.escolher
+        self.add_item(sel)
 
-    @discord.ui.button(label="Adicionar mod", emoji="➕", style=discord.ButtonStyle.success, row=0)
-    async def adicionar(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def escolher(self, interaction: discord.Interaction):
         if not eh_admin(interaction):
             await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
             return
-        await interaction.response.send_modal(AdicionarModModal(publico=False))
-
-    @discord.ui.button(label="Editar mod", emoji="✏️", style=discord.ButtonStyle.primary, row=0)
-    async def editar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not eh_admin(interaction):
-            await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
-            return
-        v = ModAdminListView("editar")
-        await interaction.response.edit_message(embed=v.embed(), view=v)
-
-    @discord.ui.button(label="Pendentes", emoji="📥", style=discord.ButtonStyle.secondary, row=1)
-    async def pendentes(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not eh_admin(interaction):
-            await interaction.response.send_message("⛔ Apenas administradores podem moderar mods.", ephemeral=True)
-            return
-        v = ModPendentesView()
-        await interaction.response.edit_message(embed=v.embed(), view=v)
-
-    @discord.ui.button(label="Remover mod", emoji="🗑️", style=discord.ButtonStyle.danger, row=0)
-    async def remover(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not eh_admin(interaction):
-            await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
-            return
-        v = ModAdminListView("remover")
-        await interaction.response.edit_message(embed=v.embed(), view=v)
+        action = interaction.data.get("values", [""])[0]
+        if action == "add":
+            await interaction.response.send_modal(AdicionarModModal(publico=False))
+        elif action == "edit":
+            v = ModAdminListView("editar")
+            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        elif action == "remove":
+            v = ModAdminListView("remover")
+            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        elif action == "pending":
+            v = ModPendentesView()
+            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        elif action == "back":
+            await interaction.response.edit_message(embed=admin_embed(), attachments=[], view=AdminView())
 
 
 # ------------------------------------------------------------------ bot

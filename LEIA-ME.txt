@@ -1,11 +1,14 @@
-Atualização: envio público de mods com moderação.
+CATÁLOGO DISCORD — PAINÉIS ORGANIZADOS
 
-Comandos:
-/catalogo - publica a mensagem principal com botões de jogos e mods
-/mods - abre o catálogo público de mods aprovados
-/enviarmod - qualquer usuário pode enviar um mod para aprovação
-/painelmods - painel administrativo, incluindo a fila Pendentes
-/adicionarmod - cadastro direto de mod por administrador
+1. Substitua o bot.py atual por este arquivo no repositório.
+2. Preserve o banco jogos.db, as pastas capas e capas_mods e as variáveis de ambiente.
+3. Faça commit na branch main e aguarde o deploy.
+4. No Discord, use /catalogo para publicar a mensagem principal.
 
-Substitua o bot.py no repositório. Preserve jogos.db, capas, capas_mods e as variáveis de ambiente.
-O canal de avisos pode ser configurado no painel Admin do catálogo de jogos; os avisos de mods usam o mesmo canal.
+Mudanças:
+- Painel administrativo de jogos usa um menu único com ações agrupadas.
+- Painel de mods usa um menu único para adicionar, editar, remover, moderar pendentes e voltar.
+- Os catálogos de jogos e mods continuam separados.
+
+Dependências: discord.py>=2.7 e Pillow>=10.0.
+A sintaxe Python foi validada; teste os fluxos após o deploy.
