@@ -1547,36 +1547,70 @@ async def catalogo(interaction: discord.Interaction):
 
 @bot.event
 async def on_ready():
-    # Cada comando era visível duas vezes quando havia uma versão global e outra
-    # no servidor. Sincronizamos as definições atuais em cada servidor onde o bot
-    # está presente e removemos os registros globais antigos. Não exige GUILD_ID.
-    if not bot._slash_sync_done:
-        try:
-            guilds = list(bot.guilds)
-            if not guilds:
-                # Se ainda não houver servidores no cache, preserva o registro global.
-                synced = await bot.tree.sync()
-                print(f"[slash] Sincronizados {len(synced)} comandos globalmente (nenhum servidor no cache).")
-            else:
-                global_names = sorted(command.name for command in bot.tree.get_commands())
-                for guild in guilds:
-                    # A sobrescrita elimina comandos de servidor antigos e mantém
-                    # exatamente o conjunto de comandos atualmente definido no código.
-                    bot.tree.clear_commands(guild=guild)
-                    bot.tree.copy_global_to(guild=guild)
-                    synced = await bot.tree.sync(guild=guild)
-                    names = ", ".join(sorted(command.name for command in synced))
-                    print(f"[slash] Sincronizados {len(synced)} comandos no servidor {guild.id} ({guild.name}): {names}")
+    """Força a reconciliação dos comandos slash no Discord uma vez por processo.
 
-                # As versões específicas dos servidores já estão atualizadas; apaga
-                # o registro global remoto para que o Discord não mostre duplicatas.
-                bot.tree.clear_commands(guild=None)
-                await bot.tree.sync()
-                print("[slash] Registros globais antigos removidos; comandos disponíveis nos servidores sincronizados.")
+    O conjunto definido no código é preservado em memória enquanto os registros
+    globais antigos são removidos. Em seguida, cada servidor recebe exatamente
+    os comandos atualmente definidos no bot.
+    """
+    if bot._slash_sync_done:
+        print(f"Bot online como {bot.user} (comandos já sincronizados neste processo)")
+        return
+
+    global_commands = list(bot.tree.get_commands())
+    guilds = list(bot.guilds)
+
+    if not guilds:
+        # Sem servidores no cache, não apaga registros globais: não há destino
+        # para publicar comandos de servidor. Sincroniza globalmente como fallback.
+        try:
+            synced = await bot.tree.sync()
+            print(f"[slash] Nenhum servidor no cache; sincronizados {len(synced)} comandos globalmente.")
             bot._slash_sync_done = True
         except Exception as exc:
-            # Um erro de sincronização deve ser visível no log e não ocultar a causa.
-            print(f"[slash] ERRO ao sincronizar comandos: {exc!r}")
+            print(f"[slash] ERRO na sincronização global: {exc!r}")
+        print(f"Bot online como {bot.user}")
+        return
+
+    # Remove os comandos globais remotos para evitar que apareçam duplicados
+    # junto com as versões específicas de servidor. Restaura as definições locais
+    # mesmo se a chamada à API falhar, para não esvaziar a árvore do bot.
+    bot.tree.clear_commands(guild=None)
+    try:
+        await bot.tree.sync()
+        print("[slash] Registros globais antigos removidos.")
+    except Exception as exc:
+        print(f"[slash] AVISO: não foi possível limpar comandos globais: {exc!r}")
+    finally:
+        for command in global_commands:
+            try:
+                bot.tree.add_command(command)
+            except app_commands.CommandAlreadyRegistered:
+                pass
+
+    falhas = []
+    for guild in guilds:
+        try:
+            # Substitui a lista remota do servidor, depois copia e publica a
+            # definição atual do código; isso também remove comandos obsoletos.
+            bot.tree.clear_commands(guild=guild)
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            names = ", ".join(sorted(command.name for command in synced))
+            print(
+                f"[slash] FORÇADO: {len(synced)} comandos sincronizados "
+                f"no servidor {guild.id} ({guild.name}): {names}"
+            )
+        except Exception as exc:
+            falhas.append((guild.id, guild.name, repr(exc)))
+            print(f"[slash] ERRO no servidor {guild.id} ({guild.name}): {exc!r}")
+
+    bot._slash_sync_done = not falhas
+    if falhas:
+        print(f"[slash] Sincronização incompleta em {len(falhas)} servidor(es); "
+              "o bot tentará novamente após reiniciar.")
+    else:
+        print("[slash] Sincronização forçada concluída; comandos globais locais preservados.")
     print(f"Bot online como {bot.user}")
 
 

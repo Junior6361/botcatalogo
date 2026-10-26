@@ -100,10 +100,19 @@ Atenção: configurar GUILD_ID na hospedagem não altera o token nem os dados do
 Use sempre o ID do servidor correto. Não publique DISCORD_TOKEN em logs ou capturas.
 
 
-CORREÇÃO DE COMANDOS DUPLICADOS
--------------------------------
-Configure GUILD_ID na hospedagem com o ID numérico do servidor Discord e faça
-novo deploy. O bot sincroniza os comandos naquele servidor e remove as cópias
-globais antigas. Isso evita aparecerem duas entradas de cada comando.
-Se comandos duplicados persistirem, confira se a hospedagem executa este bot
-com o mesmo ID de aplicação e se GUILD_ID corresponde ao servidor correto.
+CORREÇÃO FORÇADA DE COMANDOS DUPLICADOS
+--------------------------------------
+A versão atual força a sincronização no início do bot:
+- Remove os registros globais remotos antigos para evitar duplicação.
+- Preserva as definições locais dos comandos no processo.
+- Substitui os comandos registrados em cada servidor pelos comandos atuais do código.
+- Registra no log a lista sincronizada e eventuais falhas.
+
+Não é necessário configurar GUILD_ID para sincronizar os servidores em que o bot está.
+Depois de atualizar os arquivos, faça redeploy/restart e confira os logs que começam
+com [slash]. O bot precisa estar convidado com os escopos bot e applications.commands.
+
+Se ainda houver duplicatas, confirme que não há outra instância do bot rodando com o
+mesmo token e que o ID da aplicação é o correto. Se a API do Discord recusar a limpeza
+global ou a sincronização do servidor, o erro aparecerá nos logs; corrija a permissão/
+configuração indicada e reinicie o bot.
