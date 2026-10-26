@@ -507,6 +507,20 @@ class BuscaModal(discord.ui.Modal, title="Buscar jogo"):
             )
 
 
+class BuscarModModal(discord.ui.Modal, title="Buscar mod"):
+    termo = discord.ui.TextInput(label="Nome do mod ou do jogo", max_length=100,
+                                 placeholder="Ex.: Skyrim, texturas HD, roupa do Leon")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        termo = self.termo.value.strip()
+        v = ModsCatalogView(query=termo)
+        embed, file = v.render()
+        kwargs = {"embed": embed, "view": v, "ephemeral": True}
+        if file:
+            kwargs["file"] = file
+        await interaction.response.send_message(**kwargs)
+
+
 # ------------------------------------------------------------------ enviar / adicionar jogo
 
 
@@ -897,7 +911,7 @@ class MainView(discord.ui.View):
         emb, file = v.render()
         await interaction.response.send_message(embed=emb, file=file, view=v, ephemeral=True)
 
-    @discord.ui.button(label="Buscar jogo", emoji="🔎", style=discord.ButtonStyle.secondary, custom_id="catalogo:buscar", row=1)
+    @discord.ui.button(label="Buscar jogo", emoji="🔎", style=discord.ButtonStyle.secondary, custom_id="catalogo:buscar", row=2)
     async def buscar(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(BuscaModal())
 
@@ -927,7 +941,11 @@ class MainView(discord.ui.View):
             kwargs["file"] = file
         await interaction.response.send_message(**kwargs, ephemeral=True)
 
-    @discord.ui.button(label="Admin", emoji="🛠", style=discord.ButtonStyle.secondary, custom_id="catalogo:admin", row=2)
+    @discord.ui.button(label="Buscar mod", emoji="🔎", style=discord.ButtonStyle.secondary, custom_id="catalogo:buscarmod", row=2)
+    async def buscar_mod(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(BuscarModModal())
+
+    @discord.ui.button(label="Admin", emoji="🛠", style=discord.ButtonStyle.secondary, custom_id="catalogo:admin", row=3)
     async def admin(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not eh_admin(interaction):
             await interaction.response.send_message("⛔ Só administradores (permissão **Gerenciar Servidor**).", ephemeral=True)

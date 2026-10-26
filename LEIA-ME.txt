@@ -1,10 +1,10 @@
-Atualização da organização dos botões do catálogo.
+Atualização dos botões do catálogo
 
-Ordem dos botões:
 Linha 1: Catálogo de jogos | Catálogo de mods
-Linha 2: Buscar jogo | Enviar jogo | Enviar mod
-Linha 3: Admin
+Linha 2: Enviar jogo | Enviar mod
+Linha 3: Buscar jogo | Buscar mod
+Linha 4: Admin
 
 Substitua o bot.py do repositório por este arquivo e faça commit na branch main.
-Depois de publicar, execute /catalogo novamente para criar uma nova mensagem com os botões reorganizados. A mensagem antiga não muda sozinha.
-Preserve jogos.db, as pastas de capas e as variáveis de ambiente.
+Depois do deploy, execute /catalogo novamente para publicar a nova mensagem.
+Mantenha jogos.db, as pastas de capas e as variáveis de ambiente.
