@@ -1,0 +1,15 @@
+CORREÇÃO DO BOT DE JOGOS + MODS
+
+1. Substitua o arquivo bot.py do repositório pelo bot.py deste pacote.
+2. Não copie e cole o código em um editor que possa alterar a indentação.
+3. Faça commit/push do arquivo completo para a branch main.
+4. Confirme no GitHub que a linha 96 tem o bloco if indentado dentro do for:
+
+        for coluna, ddl in (...):
+            if coluna not in existentes:
+                conn.execute(...)
+
+5. Reinicie o serviço.
+
+O arquivo bot.py deste pacote passou em python -m py_compile.
+Mantenha seu DISCORD_TOKEN como variável de ambiente e preserve jogos.db e as pastas de capas existentes.
