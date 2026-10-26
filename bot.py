@@ -730,6 +730,18 @@ class AdminView(discord.ui.View):
         v = CatalogView(mode="pendentes")
         await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
 
+    @discord.ui.button(label="Admin mods", emoji="🧩", style=discord.ButtonStyle.primary, row=1)
+    async def admin_mods(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
+            return
+        emb = discord.Embed(
+            title="🧩 Administração de mods",
+            description="Gerencie o catálogo de mods separadamente dos jogos.",
+            color=discord.Color.dark_teal(),
+        )
+        await interaction.response.edit_message(embed=emb, attachments=[], view=ModAdminView())
+
     @discord.ui.button(label="Canal de avisos", emoji="📢", style=discord.ButtonStyle.secondary, row=1)
     async def canal(self, interaction: discord.Interaction, button: discord.ui.Button):
         atual = get_config("canal_avisos")
