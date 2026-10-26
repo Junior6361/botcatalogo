@@ -32,6 +32,7 @@ TOKEN = os.getenv("DISCORD_TOKEN", "")
 GUILD_ID = os.getenv("GUILD_ID")
 DB_PATH = "jogos.db"
 CAPAS_DIR = "capas"
+MODS_DIR = "capas_mods"
 PAGE_SIZE = 8  # 4 colunas x 2 linhas na grade visual
 MAX_CAPA_BYTES = 8 * 1024 * 1024
 MAX_PENDENTES_POR_USUARIO = 3
@@ -74,6 +75,7 @@ def db():
 
 def init_db():
     os.makedirs(CAPAS_DIR, exist_ok=True)
+    os.makedirs(MODS_DIR, exist_ok=True)
     with db() as conn:
         conn.execute(
             """CREATE TABLE IF NOT EXISTS jogos (
@@ -95,6 +97,16 @@ def init_db():
             if coluna not in existentes:
                 conn.execute(f"ALTER TABLE jogos ADD COLUMN {coluna} {ddl}")
         conn.execute("CREATE TABLE IF NOT EXISTS config (chave TEXT PRIMARY KEY, valor TEXT)")
+        # Catálogo de mods separado do catálogo de jogos.
+        conn.execute("""CREATE TABLE IF NOT EXISTS mods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jogo_nome TEXT NOT NULL,
+            mod_nome TEXT NOT NULL,
+            descricao TEXT,
+            imagem TEXT,
+            link TEXT NOT NULL,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
 
 
 def get_config(chave):
@@ -886,6 +898,192 @@ class MainView(discord.ui.View):
             await interaction.response.send_message("⛔ Só administradores (permissão **Gerenciar Servidor**).", ephemeral=True)
             return
         await interaction.response.send_message(embed=admin_embed(), view=AdminView(), ephemeral=True)
+
+
+
+# ------------------------------------------------------------------ catálogo separado de mods
+
+
+def listar_mods(query=None, page=0):
+    where, params = [], []
+    if query:
+        where.append("(jogo_nome LIKE ? OR mod_nome LIKE ?)")
+        params.extend([f"%{query}%", f"%{query}%"])
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    with db() as conn:
+        total = conn.execute(f"SELECT COUNT(*) FROM mods {clause}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT id, jogo_nome, mod_nome, descricao, imagem, link FROM mods {clause} "
+            "ORDER BY jogo_nome COLLATE NOCASE, mod_nome COLLATE NOCASE LIMIT ? OFFSET ?",
+            params + [PAGE_SIZE, page * PAGE_SIZE],
+        ).fetchall()
+    return rows, total
+
+
+def get_mod(mod_id):
+    with db() as conn:
+        return conn.execute("SELECT * FROM mods WHERE id = ?", (mod_id,)).fetchone()
+
+
+def criar_grade_mods(rows):
+    """Gera grade visual exclusiva para o catálogo de mods."""
+    # Adaptamos os nomes dos campos apenas para reutilizar o renderizador de capas.
+    adaptados = [dict(capa=r["imagem"], nome=r["mod_nome"], plataforma=r["jogo_nome"]) for r in rows]
+    arquivo = criar_grade_capas(adaptados)
+    arquivo.filename = "catalogo_mods.png"
+    return arquivo
+
+
+class ModSelect(discord.ui.Select):
+    def __init__(self, rows):
+        options = [discord.SelectOption(
+            label=r["mod_nome"][:100], value=str(r["id"]),
+            description=f"Jogo: {r['jogo_nome']}"[:100], emoji="🧩") for r in rows]
+        super().__init__(placeholder="Escolha um mod para ver os detalhes", options=options, row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        mod = get_mod(int(self.values[0]))
+        if not mod:
+            await interaction.response.send_message("Esse mod não existe mais.", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title=mod["mod_nome"],
+            description=(f"**Jogo:** {mod['jogo_nome']}\n\n{mod['descricao'] or 'Sem descrição cadastrada.'}")[:4000],
+            color=discord.Color.dark_teal(),
+        )
+        file = None
+        if mod["imagem"] and os.path.isfile(mod["imagem"]):
+            filename = os.path.basename(mod["imagem"])
+            file = discord.File(mod["imagem"], filename=filename)
+            embed.set_image(url=f"attachment://{filename}")
+        view = discord.ui.View(timeout=900)
+        view.add_item(discord.ui.Button(label="Abrir / baixar mod", emoji="🔗",
+                                        style=discord.ButtonStyle.link, url=mod["link"]))
+        back = discord.ui.Button(label="Voltar ao catálogo", emoji="⬅️", style=discord.ButtonStyle.secondary)
+        async def voltar(i: discord.Interaction):
+            v = ModsCatalogView(self.view.query, self.view.page)
+            e, f = v.render()
+            await i.response.edit_message(embed=e, attachments=[f] if f else [], view=v)
+        back.callback = voltar
+        view.add_item(back)
+        await interaction.response.edit_message(embed=embed, attachments=[file] if file else [], view=view)
+
+
+class ModsPageButton(discord.ui.Button):
+    def __init__(self, delta, disabled):
+        super().__init__(label="Anterior" if delta < 0 else "Próxima",
+                         emoji="⬅️" if delta < 0 else "➡️",
+                         style=discord.ButtonStyle.secondary, disabled=disabled, row=1)
+        self.delta = delta
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.page += self.delta
+        self.view.rebuild()
+        emb, file = self.view.render()
+        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=self.view)
+
+
+class ModsCatalogView(discord.ui.View):
+    def __init__(self, query=None, page=0):
+        super().__init__(timeout=900)
+        self.query, self.page = query, page
+        self.rebuild()
+
+    def rebuild(self):
+        self.clear_items()
+        self.rows, self.total = listar_mods(self.query, self.page)
+        pages = max(1, math.ceil(self.total / PAGE_SIZE))
+        if self.rows:
+            self.add_item(ModSelect(self.rows))
+        self.add_item(ModsPageButton(-1, self.page <= 0))
+        self.add_item(ModsPageButton(1, self.page >= pages - 1))
+
+    def render(self):
+        pages = max(1, math.ceil(self.total / PAGE_SIZE))
+        embed = discord.Embed(
+            title="🧩 Catálogo de Mods",
+            description=("Selecione um mod no menu para ver descrição, imagem e link.\n\n"
+                         "**Mods nesta página:**\n" + "\n".join(
+                             f"🧩 **{r['mod_nome']}** — *{r['jogo_nome']}*" for r in self.rows))
+                        if self.rows else "Nenhum mod cadastrado ainda.",
+            color=discord.Color.dark_teal(),
+        )
+        file = criar_grade_mods(self.rows) if self.rows else None
+        if file:
+            embed.set_image(url="attachment://catalogo_mods.png")
+        embed.set_footer(text=f"Página {self.page + 1}/{pages} • {self.total} mod(s)")
+        return embed, file
+
+
+class AdicionarModModal(discord.ui.Modal, title="Cadastrar mod"):
+    jogo_nome = discord.ui.TextInput(label="Nome do jogo", max_length=100, placeholder="Ex.: Skyrim")
+    mod_nome = discord.ui.TextInput(label="Nome do mod", max_length=100, placeholder="Ex.: Texturas HD")
+    descricao = discord.ui.TextInput(label="Descrição do mod", style=discord.TextStyle.paragraph,
+                                     required=True, max_length=1500, placeholder="O que o mod altera/adiciona?")
+    link = discord.ui.TextInput(label="Link do mod", max_length=500, placeholder="https://...")
+
+    def __init__(self):
+        super().__init__()
+        self.imagem = discord.ui.FileUpload(required=True, min_values=1, max_values=1)
+        self.add_item(discord.ui.Label(text="Imagem do mod", component=self.imagem))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem cadastrar mods.", ephemeral=True)
+            return
+        link = self.link.value.strip()
+        erro = validar_links(link=link)
+        if erro:
+            await interaction.response.send_message(erro, ephemeral=True)
+            return
+        if not self.imagem.values:
+            await interaction.response.send_message("Envie a imagem do mod.", ephemeral=True)
+            return
+        att = self.imagem.values[0]
+        if not (att.content_type or "").startswith("image/"):
+            await interaction.response.send_message("O arquivo enviado precisa ser uma imagem.", ephemeral=True)
+            return
+        if att.size > MAX_CAPA_BYTES:
+            await interaction.response.send_message("A imagem deve ter no máximo 8 MB.", ephemeral=True)
+            return
+        ext = os.path.splitext(att.filename)[1].lower()
+        if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+            ext = ".png"
+        path = os.path.join(MODS_DIR, f"{uuid.uuid4().hex}{ext}")
+        try:
+            await att.save(path)
+        except Exception:
+            await interaction.response.send_message("Não consegui salvar a imagem.", ephemeral=True)
+            return
+        with db() as conn:
+            cur = conn.execute(
+                "INSERT INTO mods (jogo_nome, mod_nome, descricao, imagem, link) VALUES (?, ?, ?, ?, ?)",
+                (self.jogo_nome.value.strip(), self.mod_nome.value.strip(), self.descricao.value.strip(), path, link),
+            )
+            mod_id = cur.lastrowid
+        await interaction.response.send_message(
+            f"✅ Mod **{self.mod_nome.value.strip()}** cadastrado separadamente no catálogo de mods. ID: `{mod_id}`.",
+            ephemeral=True,
+        )
+
+
+@tree.command(name="mods", description="Abre o catálogo separado de mods")
+@app_commands.guild_only()
+async def mods(interaction: discord.Interaction):
+    view = ModsCatalogView()
+    embed, file = view.render()
+    kwargs = {"embed": embed, "view": view}
+    if file:
+        kwargs["file"] = file
+    await interaction.response.send_message(**kwargs)
+
+
+@tree.command(name="adicionarmod", description="[Admin] Cadastra um mod no catálogo separado")
+@app_commands.guild_only()
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(manage_guild=True)
+async def adicionarmod(interaction: discord.Interaction):
+    await interaction.response.send_modal(AdicionarModModal())
 
 
 # ------------------------------------------------------------------ bot
