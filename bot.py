@@ -209,6 +209,25 @@ def validar_links(**links):
 # ------------------------------------------------------------------ embeds e botões de link
 
 
+
+def embed_para_markdown(embed):
+    """Converte o conteúdo textual de um Embed para Markdown comum do Discord."""
+    partes = []
+    titulo = getattr(embed, "title", None)
+    descricao = getattr(embed, "description", None)
+    if titulo:
+        partes.append(f"## {titulo}")
+    if descricao:
+        partes.append(descricao)
+    for campo in getattr(embed, "fields", []):
+        partes.append(f"**{campo.name}**\n{campo.value}")
+    rodape = getattr(getattr(embed, "footer", None), "text", None)
+    if rodape:
+        partes.append(f"_{rodape}_")
+    texto = "\n\n".join(partes).strip() or " "
+    return texto[:2000]
+
+
 def jogo_embed(j):
     pendente = j["status"] == "pendente"
     emb = discord.Embed(
@@ -262,7 +281,7 @@ def admin_embed():
 
 
 def send_kwargs(emb, file, view):
-    return dict(embed=emb, view=view, **({"file": file} if file else {}))
+    return dict(content=embed_para_markdown(emb), view=view, **({"file": file} if file else {}))
 
 
 # ------------------------------------------------------------------ grade visual do catálogo
@@ -374,7 +393,7 @@ class JogoSelect(discord.ui.Select):
             view = RemoverView(jogo, v.estado())
         else:
             view = PendenteView(jogo, v.estado())
-        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=view)
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[file] if file else [], view=view)
 
 
 class PageButton(discord.ui.Button):
@@ -397,7 +416,7 @@ class PainelButton(discord.ui.Button):
         super().__init__(label="Painel", emoji="🛠", style=discord.ButtonStyle.primary, row=2)
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(embed=admin_embed(), attachments=[], view=AdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(admin_embed()), attachments=[], view=AdminView())
 
 
 class CatalogView(discord.ui.View):
@@ -465,7 +484,7 @@ class CatalogView(discord.ui.View):
         self.build()
         emb, file = self.render()
         await interaction.response.edit_message(
-            embed=emb, attachments=[file] if file else [], view=self
+            content=embed_para_markdown(emb), attachments=[file] if file else [], view=self
         )
 
 
@@ -482,7 +501,7 @@ class DetalheView(discord.ui.View):
     async def voltar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
         emb, file = v.render()
-        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[file] if file else [], view=v)
 
 
 # ------------------------------------------------------------------ busca
@@ -503,7 +522,7 @@ class BuscaModal(discord.ui.Modal, title="Buscar jogo"):
         else:
             emb, file = v.render()
             await interaction.response.send_message(
-                embed=emb, file=file, view=v, ephemeral=True
+                content=embed_para_markdown(emb), file=file, view=v, ephemeral=True
             )
 
 
@@ -544,7 +563,7 @@ class PlataformaPickView(discord.ui.View):
         await interaction.response.send_modal(AddModal(self.select.values[0], self.publico))
 
     async def voltar(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(embed=admin_embed(), view=AdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(admin_embed()), view=AdminView())
 
 
 class AddModal(discord.ui.Modal):
@@ -616,8 +635,7 @@ async def avisar_moderacao(jogo):
         emb, file = jogo_embed(jogo)
         kw = {"file": file} if file else {}
         await canal.send(
-            content="📥 **Novo jogo aguardando aprovação!** Abra o botão 🛠 Admin → **Pendentes** para analisar.",
-            embed=emb, **kw)
+            content="📥 **Novo jogo aguardando aprovação!** Abra o botão 🛠 Admin → **Pendentes** para analisar.\n\n" + embed_para_markdown(emb), **kw)
     except Exception as e:
         print("Não consegui avisar a moderação:", repr(e))
 
@@ -643,7 +661,7 @@ class VoltarPendentesView(discord.ui.View):
     async def voltar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
         emb, file = v.render()
-        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[file] if file else [], view=v)
 
 
 class PendenteView(discord.ui.View):
@@ -672,7 +690,7 @@ class PendenteView(discord.ui.View):
         await avisar_autor(self.jogo, f"✅ Seu jogo **{self.jogo['nome']}** foi aprovado e já está no catálogo!")
         emb = discord.Embed(title="✅ Jogo aprovado", description=f"**{self.jogo['nome']}** já está no catálogo.",
                             color=discord.Color.green())
-        await interaction.response.edit_message(embed=emb, attachments=[], view=VoltarPendentesView(self.estado))
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[], view=VoltarPendentesView(self.estado))
 
     async def rejeitar(self, interaction: discord.Interaction):
         if not eh_admin(interaction):
@@ -684,12 +702,12 @@ class PendenteView(discord.ui.View):
         await avisar_autor(self.jogo, f"❌ Seu envio **{self.jogo['nome']}** não foi aprovado pela moderação.")
         emb = discord.Embed(title="❌ Envio rejeitado", description=f"**{self.jogo['nome']}** foi removido.",
                             color=discord.Color.red())
-        await interaction.response.edit_message(embed=emb, attachments=[], view=VoltarPendentesView(self.estado))
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[], view=VoltarPendentesView(self.estado))
 
     async def voltar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
         emb, file = v.render()
-        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[file] if file else [], view=v)
 
 
 class CanalView(discord.ui.View):
@@ -710,10 +728,10 @@ class CanalView(discord.ui.View):
         emb = discord.Embed(title="📢 Canal de avisos definido",
                             description=f"Novos envios serão avisados em {canal.mention}.",
                             color=discord.Color.green())
-        await interaction.response.edit_message(embed=emb, view=AdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(emb), view=AdminView())
 
     async def voltar(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(embed=admin_embed(), view=AdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(admin_embed()), view=AdminView())
 
 
 # ------------------------------------------------------------------ painel admin
@@ -746,26 +764,26 @@ class AdminView(discord.ui.View):
         if action == "add_game":
             emb = discord.Embed(title="➕ Adicionar jogo", description="Escolha a plataforma de origem para abrir o formulário.", color=discord.Color.green())
             view = PlataformaPickView()
-            await interaction.response.edit_message(embed=emb, attachments=[], view=view)
+            await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[], view=view)
         elif action == "edit_game":
             v = CatalogView(mode="editar")
-            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+            await interaction.response.edit_message(content=embed_para_markdown(v.embed()), attachments=[], view=v)
         elif action == "delete_game":
             v = CatalogView(mode="remover")
-            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+            await interaction.response.edit_message(content=embed_para_markdown(v.embed()), attachments=[], view=v)
         elif action == "pending_games":
             v = CatalogView(mode="pendentes")
-            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+            await interaction.response.edit_message(content=embed_para_markdown(v.embed()), attachments=[], view=v)
         elif action == "mods":
-            await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma ação no menu para gerenciar o catálogo de mods.", color=discord.Color.dark_teal()), attachments=[], view=ModAdminView())
+            await interaction.response.edit_message(content=embed_para_markdown(discord.Embed(title="🧩 Administração de mods", description="Escolha uma ação no menu para gerenciar o catálogo de mods.", color=discord.Color.dark_teal())), attachments=[], view=ModAdminView())
         elif action == "pending_mods":
             v = ModPendentesView()
-            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+            await interaction.response.edit_message(content=embed_para_markdown(v.embed()), attachments=[], view=v)
         elif action == "channel":
             atual = get_config("canal_avisos")
             texto = (f"Canal atual: <#{atual}>\n\n" if atual else "Nenhum canal definido ainda.\n\n")
             texto += "Escolha onde avisar sobre envios que aguardam aprovação."
-            await interaction.response.edit_message(embed=discord.Embed(title="📢 Canal de avisos", description=texto, color=discord.Color.orange()), attachments=[], view=CanalView())
+            await interaction.response.edit_message(content=embed_para_markdown(discord.Embed(title="📢 Canal de avisos", description=texto, color=discord.Color.orange())), attachments=[], view=CanalView())
 
 
 class EditarView(discord.ui.View):
@@ -794,7 +812,7 @@ class EditarView(discord.ui.View):
         jogo = get_jogo(self.jogo["id"])
         emb, file = jogo_embed(jogo)
         await interaction.response.edit_message(
-            embed=emb, attachments=[file] if file else [], view=EditarView(jogo, self.estado))
+            content=embed_para_markdown(emb), attachments=[file] if file else [], view=EditarView(jogo, self.estado))
 
     async def abrir_modal(self, interaction: discord.Interaction):
         await interaction.response.send_modal(EditModal(get_jogo(self.jogo["id"])))
@@ -805,7 +823,7 @@ class EditarView(discord.ui.View):
     async def voltar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
         emb, file = v.render()
-        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[file] if file else [], view=v)
 
 
 class EditModal(discord.ui.Modal):
@@ -890,12 +908,12 @@ class RemoverView(discord.ui.View):
         apagar_arquivo(self.jogo["capa"])
         emb = discord.Embed(title="🗑 Jogo removido", description=f"**{self.jogo['nome']}** saiu do catálogo.",
                             color=discord.Color.red())
-        await interaction.response.edit_message(embed=emb, attachments=[], view=AdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[], view=AdminView())
 
     async def cancelar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
         emb, file = v.render()
-        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[file] if file else [], view=v)
 
 
 # ------------------------------------------------------------------ mensagem principal (persistente)
@@ -909,7 +927,7 @@ class MainView(discord.ui.View):
     async def ver(self, interaction: discord.Interaction, button: discord.ui.Button):
         v = CatalogView()
         emb, file = v.render()
-        await interaction.response.send_message(embed=emb, file=file, view=v, ephemeral=True)
+        await interaction.response.send_message(content=embed_para_markdown(emb), file=file, view=v, ephemeral=True)
 
     @discord.ui.button(label="Buscar jogo", emoji="🔎", style=discord.ButtonStyle.secondary, custom_id="catalogo:buscar", row=2)
     async def buscar(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -926,7 +944,7 @@ class MainView(discord.ui.View):
             ),
             color=discord.Color.green(),
         )
-        await interaction.response.send_message(embed=emb, view=PlataformaPickView(publico=True), ephemeral=True)
+        await interaction.response.send_message(content=embed_para_markdown(emb), view=PlataformaPickView(publico=True), ephemeral=True)
 
     @discord.ui.button(label="Enviar mod", emoji="📤", style=discord.ButtonStyle.success, custom_id="catalogo:enviarmod", row=1)
     async def enviar_mod(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -950,7 +968,7 @@ class MainView(discord.ui.View):
         if not eh_admin(interaction):
             await interaction.response.send_message("⛔ Só administradores (permissão **Gerenciar Servidor**).", ephemeral=True)
             return
-        await interaction.response.send_message(embed=admin_embed(), view=AdminView(), ephemeral=True)
+        await interaction.response.send_message(content=embed_para_markdown(admin_embed()), view=AdminView(), ephemeral=True)
 
 
 
@@ -1073,10 +1091,10 @@ class ModSelect(discord.ui.Select):
         async def voltar(i: discord.Interaction):
             v = ModsCatalogView(self.view.query, self.view.page)
             e, f = v.render()
-            await i.response.edit_message(embed=e, attachments=[f] if f else [], view=v)
+            await i.response.edit_message(content=embed_para_markdown(e), attachments=[f] if f else [], view=v)
         back.callback = voltar
         view.add_item(back)
-        await interaction.response.edit_message(embed=embed, attachments=[file] if file else [], view=view)
+        await interaction.response.edit_message(content=embed_para_markdown(embed), attachments=[file] if file else [], view=view)
 
 
 class ModsPageButton(discord.ui.Button):
@@ -1090,7 +1108,7 @@ class ModsPageButton(discord.ui.Button):
         self.view.page += self.delta
         self.view.rebuild()
         emb, file = self.view.render()
-        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=self.view)
+        await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[file] if file else [], view=self.view)
 
 
 class ModsCatalogView(discord.ui.View):
@@ -1217,7 +1235,7 @@ class ModAdminSelect(discord.ui.Select):
         else:
             view = ConfirmarRemocaoModView(mod)
             emb = discord.Embed(title="Remover mod?", description=f"**{mod['mod_nome']}**\nJogo: {mod['jogo_nome']}\n\nEssa ação não pode ser desfeita.", color=discord.Color.red())
-            await interaction.response.edit_message(embed=emb, view=view)
+            await interaction.response.edit_message(content=embed_para_markdown(emb), view=view)
 
 
 class ModAdminListView(discord.ui.View):
@@ -1248,14 +1266,14 @@ class ModAdminListView(discord.ui.View):
 
     async def anterior(self, interaction):
         v = ModAdminListView(self.action, self.page - 1)
-        await interaction.response.edit_message(embed=v.embed(), view=v)
+        await interaction.response.edit_message(content=embed_para_markdown(v.embed()), view=v)
 
     async def proxima(self, interaction):
         v = ModAdminListView(self.action, self.page + 1)
-        await interaction.response.edit_message(embed=v.embed(), view=v)
+        await interaction.response.edit_message(content=embed_para_markdown(v.embed()), view=v)
 
     async def voltar(self, interaction):
-        await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()), view=ModAdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal())), view=ModAdminView())
 
 
 class EditarModModal(discord.ui.Modal):
@@ -1299,11 +1317,11 @@ class ConfirmarRemocaoModView(discord.ui.View):
         with db() as conn:
             conn.execute("DELETE FROM mods WHERE id=?", (self.mod['id'],))
         apagar_arquivo(self.mod['imagem'])
-        await interaction.response.edit_message(embed=discord.Embed(title="Mod removido", description=f"**{self.mod['mod_nome']}** foi removido do catálogo de mods.", color=discord.Color.red()), view=ModAdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(discord.Embed(title="Mod removido", description=f"**{self.mod['mod_nome']}** foi removido do catálogo de mods.", color=discord.Color.red())), view=ModAdminView())
 
     @discord.ui.button(label="Cancelar", emoji="↩️", style=discord.ButtonStyle.secondary)
     async def cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()), view=ModAdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal())), view=ModAdminView())
 
 
 class ModPendentesSelect(discord.ui.Select):
@@ -1322,9 +1340,9 @@ class ModPendentesSelect(discord.ui.Select):
         emb = discord.Embed(title=mod["mod_nome"], description=f"**Jogo:** {mod['jogo_nome']}\n**Descrição:** {mod['descricao'] or 'Sem descrição'}\n**Link:** {mod['link']}\n**Enviado por:** <@{mod['autor_id']}>" if mod['autor_id'] else f"**Jogo:** {mod['jogo_nome']}\n**Descrição:** {mod['descricao'] or 'Sem descrição'}\n**Link:** {mod['link']}", color=discord.Color.orange())
         if mod["imagem"] and os.path.exists(mod["imagem"]):
             emb.set_image(url="attachment://mod_pendente.png")
-            await interaction.response.edit_message(embed=emb, attachments=[discord.File(mod["imagem"], filename="mod_pendente.png")], view=ModDecisaoView(mod))
+            await interaction.response.edit_message(content=embed_para_markdown(emb), attachments=[discord.File(mod["imagem"], filename="mod_pendente.png")], view=ModDecisaoView(mod))
         else:
-            await interaction.response.edit_message(embed=emb, view=ModDecisaoView(mod))
+            await interaction.response.edit_message(content=embed_para_markdown(emb), view=ModDecisaoView(mod))
 
 
 class ModPendentesView(discord.ui.View):
@@ -1342,7 +1360,7 @@ class ModPendentesView(discord.ui.View):
         return discord.Embed(title="📥 Mods pendentes", description="Selecione um envio para aprovar ou rejeitar." if self.rows else "Não há mods aguardando aprovação.", color=discord.Color.orange())
 
     async def voltar(self, interaction):
-        await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()), view=ModAdminView())
+        await interaction.response.edit_message(content=embed_para_markdown(discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal())), view=ModAdminView())
 
 
 class ModDecisaoView(discord.ui.View):
@@ -1356,7 +1374,7 @@ class ModDecisaoView(discord.ui.View):
             await interaction.response.send_message("⛔ Apenas administradores podem moderar mods.", ephemeral=True); return
         with db() as conn:
             conn.execute("UPDATE mods SET status='aprovado' WHERE id=?", (self.mod["id"],))
-        await interaction.response.edit_message(embed=discord.Embed(title="✅ Mod aprovado", description=f"**{self.mod['mod_nome']}** já aparece no catálogo de mods.", color=discord.Color.green()), attachments=[], view=ModPendentesView())
+        await interaction.response.edit_message(content=embed_para_markdown(discord.Embed(title="✅ Mod aprovado", description=f"**{self.mod['mod_nome']}** já aparece no catálogo de mods.", color=discord.Color.green())), attachments=[], view=ModPendentesView())
 
     @discord.ui.button(label="Rejeitar", emoji="❌", style=discord.ButtonStyle.danger)
     async def rejeitar(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1365,7 +1383,7 @@ class ModDecisaoView(discord.ui.View):
         with db() as conn:
             conn.execute("DELETE FROM mods WHERE id=?", (self.mod["id"],))
         apagar_arquivo(self.mod["imagem"])
-        await interaction.response.edit_message(embed=discord.Embed(title="❌ Mod rejeitado", description=f"**{self.mod['mod_nome']}** foi removido dos envios.", color=discord.Color.red()), attachments=[], view=ModPendentesView())
+        await interaction.response.edit_message(content=embed_para_markdown(discord.Embed(title="❌ Mod rejeitado", description=f"**{self.mod['mod_nome']}** foi removido dos envios.", color=discord.Color.red())), attachments=[], view=ModPendentesView())
 
 
 class ModAdminView(discord.ui.View):
@@ -1393,15 +1411,15 @@ class ModAdminView(discord.ui.View):
             await interaction.response.send_modal(AdicionarModModal(publico=False))
         elif action == "edit":
             v = ModAdminListView("editar")
-            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+            await interaction.response.edit_message(content=embed_para_markdown(v.embed()), attachments=[], view=v)
         elif action == "remove":
             v = ModAdminListView("remover")
-            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+            await interaction.response.edit_message(content=embed_para_markdown(v.embed()), attachments=[], view=v)
         elif action == "pending":
             v = ModPendentesView()
-            await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+            await interaction.response.edit_message(content=embed_para_markdown(v.embed()), attachments=[], view=v)
         elif action == "back":
-            await interaction.response.edit_message(embed=admin_embed(), attachments=[], view=AdminView())
+            await interaction.response.edit_message(content=embed_para_markdown(admin_embed()), attachments=[], view=AdminView())
 
 
 # ------------------------------------------------------------------ bot
@@ -1470,7 +1488,7 @@ async def on_error(interaction: discord.Interaction, error: app_commands.AppComm
 @app_commands.checks.has_permissions(manage_guild=True)
 async def painelmods(interaction: discord.Interaction):
     await interaction.response.send_message(
-        embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()),
+        content=embed_para_markdown(discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal())),
         view=ModAdminView(), ephemeral=True,
     )
 
@@ -1480,7 +1498,7 @@ async def painelmods(interaction: discord.Interaction):
 @app_commands.default_permissions(manage_guild=True)
 @app_commands.checks.has_permissions(manage_guild=True)
 async def catalogo(interaction: discord.Interaction):
-    await interaction.response.send_message(embed=main_embed(), view=MainView())
+    await interaction.response.send_message(content=embed_para_markdown(main_embed()), view=MainView())
 
 
 @bot.event
