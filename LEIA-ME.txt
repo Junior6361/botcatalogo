@@ -1,9 +1,9 @@
-BOT COM CATÁLOGO DE JOGOS E PAINEL DE MODS
+CORREÇÃO DE INDENTAÇÃO DO BOT
 
-Comandos:
-/catalogo - catálogo de jogos
-/mods - catálogo público de mods
-/adicionarmod - cadastro direto de mod (admin)
-/painelmods - painel administrativo com adicionar, editar e remover mods
+1. Substitua o arquivo bot.py do repositório inteiro pelo bot.py deste pacote.
+2. Não cole apenas um trecho e não edite manualmente a linha 96.
+3. Faça commit na branch main e aguarde o deploy.
+4. Mantenha jogos.db, pastas de capas e variáveis de ambiente existentes.
 
-Substitua o bot.py do repositório por este arquivo. Mantenha jogos.db, capas/, capas_mods/ e as variáveis de ambiente.
+O bot.py deste pacote passou por compilação sintática com Python.
+Se o log continuar mostrando o mesmo erro na linha 96, o deploy está usando outro arquivo/commit ou o arquivo foi colado incorretamente.
