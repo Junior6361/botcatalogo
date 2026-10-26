@@ -116,3 +116,13 @@ Se ainda houver duplicatas, confirme que não há outra instância do bot rodand
 mesmo token e que o ID da aplicação é o correto. Se a API do Discord recusar a limpeza
 global ou a sincronização do servidor, o erro aparecerá nos logs; corrija a permissão/
 configuração indicada e reinicie o bot.
+
+
+CORREÇÃO DEFINITIVA DE COMANDOS DUPLICADOS (v3)
+-----------------------------------------------
+Causa: os comandos existiam ao mesmo tempo no escopo GLOBAL e no escopo do SERVIDOR,
+e o Discord exibe os dois. Agora o bot apaga os comandos globais direto pela API e
+publica os comandos apenas em cada servidor (também ao entrar em um servidor novo).
+Após o deploy, reinicie o Discord (Ctrl+R) para limpar o cache de comandos do cliente.
+Se ainda houver duplicatas, há outra instância rodando com o mesmo token (ex.: seu PC
+e a hospedagem ao mesmo tempo) — pare a antiga.
