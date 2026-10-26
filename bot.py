@@ -105,8 +105,14 @@ def init_db():
             descricao TEXT,
             imagem TEXT,
             link TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'aprovado',
+            autor_id INTEGER,
             criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""")
+        colunas_mods = {r[1] for r in conn.execute("PRAGMA table_info(mods)")}
+        for coluna, ddl in (("status", "TEXT NOT NULL DEFAULT 'aprovado'"), ("autor_id", "INTEGER")):
+            if coluna not in colunas_mods:
+                conn.execute(f"ALTER TABLE mods ADD COLUMN {coluna} {ddl}")
 
 
 def get_config(chave):
@@ -893,6 +899,10 @@ class MainView(discord.ui.View):
         )
         await interaction.response.send_message(embed=emb, view=PlataformaPickView(publico=True), ephemeral=True)
 
+    @discord.ui.button(label="Enviar mod", emoji="📤", style=discord.ButtonStyle.success, custom_id="catalogo:enviarmod")
+    async def enviar_mod(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(AdicionarModModal(publico=True))
+
     @discord.ui.button(label="Catálogo de mods", emoji="🧩", style=discord.ButtonStyle.primary, custom_id="catalogo:mods")
     async def abrir_mods(self, interaction: discord.Interaction, button: discord.ui.Button):
         v = ModsCatalogView()
@@ -915,7 +925,7 @@ class MainView(discord.ui.View):
 
 
 def listar_mods(query=None, page=0):
-    where, params = [], []
+    where, params = ["status = 'aprovado'"], []
     if query:
         where.append("(jogo_nome LIKE ? OR mod_nome LIKE ?)")
         params.extend([f"%{query}%", f"%{query}%"])
@@ -1025,20 +1035,21 @@ class ModsCatalogView(discord.ui.View):
         return embed, file
 
 
-class AdicionarModModal(discord.ui.Modal, title="Cadastrar mod"):
+class AdicionarModModal(discord.ui.Modal):
     jogo_nome = discord.ui.TextInput(label="Nome do jogo", max_length=100, placeholder="Ex.: Skyrim")
     mod_nome = discord.ui.TextInput(label="Nome do mod", max_length=100, placeholder="Ex.: Texturas HD")
     descricao = discord.ui.TextInput(label="Descrição do mod", style=discord.TextStyle.paragraph,
                                      required=True, max_length=1500, placeholder="O que o mod altera/adiciona?")
     link = discord.ui.TextInput(label="Link do mod", max_length=500, placeholder="https://...")
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, publico=False):
+        super().__init__(title="Enviar mod para aprovação" if publico else "Cadastrar mod")
+        self.publico = publico
         self.imagem = discord.ui.FileUpload(required=True, min_values=1, max_values=1)
         self.add_item(discord.ui.Label(text="Imagem do mod", component=self.imagem))
 
     async def on_submit(self, interaction: discord.Interaction):
-        if not eh_admin(interaction):
+        if not self.publico and not eh_admin(interaction):
             await interaction.response.send_message("⛔ Apenas administradores podem cadastrar mods.", ephemeral=True)
             return
         link = self.link.value.strip()
@@ -1067,14 +1078,27 @@ class AdicionarModModal(discord.ui.Modal, title="Cadastrar mod"):
             return
         with db() as conn:
             cur = conn.execute(
-                "INSERT INTO mods (jogo_nome, mod_nome, descricao, imagem, link) VALUES (?, ?, ?, ?, ?)",
-                (self.jogo_nome.value.strip(), self.mod_nome.value.strip(), self.descricao.value.strip(), path, link),
+                "INSERT INTO mods (jogo_nome, mod_nome, descricao, imagem, link, status, autor_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (self.jogo_nome.value.strip(), self.mod_nome.value.strip(), self.descricao.value.strip(), path, link,
+                 "pendente" if self.publico else "aprovado", interaction.user.id),
             )
             mod_id = cur.lastrowid
-        await interaction.response.send_message(
-            f"✅ Mod **{self.mod_nome.value.strip()}** cadastrado separadamente no catálogo de mods. ID: `{mod_id}`.",
-            ephemeral=True,
-        )
+        if self.publico:
+            await interaction.response.send_message(
+                f"✅ Seu mod **{self.mod_nome.value.strip()}** foi enviado para análise da moderação. Ele aparecerá no catálogo após aprovação.",
+                ephemeral=True,
+            )
+            canal_id = get_config("canal_avisos")
+            if canal_id:
+                try:
+                    canal = bot.get_channel(int(canal_id)) or await bot.fetch_channel(int(canal_id))
+                    await canal.send(f"📥 Novo mod aguardando aprovação: **{self.mod_nome.value.strip()}** (jogo: {self.jogo_nome.value.strip()}). Use `/painelmods` → **Pendentes**.")
+                except Exception as e:
+                    print("Não consegui avisar moderação sobre mod:", repr(e))
+        else:
+            await interaction.response.send_message(
+                f"✅ Mod **{self.mod_nome.value.strip()}** cadastrado no catálogo. ID: `{mod_id}`.", ephemeral=True,
+            )
 
 
 # ------------------------------------------------------------------ administração de mods
@@ -1188,6 +1212,68 @@ class ConfirmarRemocaoModView(discord.ui.View):
         await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()), view=ModAdminView())
 
 
+class ModPendentesSelect(discord.ui.Select):
+    def __init__(self, rows):
+        options = [discord.SelectOption(label=r["mod_nome"][:100], value=str(r["id"]), description=f"Jogo: {r['jogo_nome']}"[:100]) for r in rows]
+        super().__init__(placeholder="Escolha um mod pendente", options=options, row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem moderar mods.", ephemeral=True)
+            return
+        mod = get_mod(int(self.values[0]))
+        if not mod or mod["status"] != "pendente":
+            await interaction.response.send_message("Esse envio não está mais pendente.", ephemeral=True)
+            return
+        emb = discord.Embed(title=mod["mod_nome"], description=f"**Jogo:** {mod['jogo_nome']}\n**Descrição:** {mod['descricao'] or 'Sem descrição'}\n**Link:** {mod['link']}\n**Enviado por:** <@{mod['autor_id']}>" if mod['autor_id'] else f"**Jogo:** {mod['jogo_nome']}\n**Descrição:** {mod['descricao'] or 'Sem descrição'}\n**Link:** {mod['link']}", color=discord.Color.orange())
+        if mod["imagem"] and os.path.exists(mod["imagem"]):
+            emb.set_image(url="attachment://mod_pendente.png")
+            await interaction.response.edit_message(embed=emb, attachments=[discord.File(mod["imagem"], filename="mod_pendente.png")], view=ModDecisaoView(mod))
+        else:
+            await interaction.response.edit_message(embed=emb, view=ModDecisaoView(mod))
+
+
+class ModPendentesView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=900)
+        with db() as conn:
+            self.rows = conn.execute("SELECT id, jogo_nome, mod_nome FROM mods WHERE status='pendente' ORDER BY id DESC LIMIT 25").fetchall()
+        if self.rows:
+            self.add_item(ModPendentesSelect(self.rows))
+        b = discord.ui.Button(label="Voltar", emoji="⬅️", row=1)
+        b.callback = self.voltar
+        self.add_item(b)
+
+    def embed(self):
+        return discord.Embed(title="📥 Mods pendentes", description="Selecione um envio para aprovar ou rejeitar." if self.rows else "Não há mods aguardando aprovação.", color=discord.Color.orange())
+
+    async def voltar(self, interaction):
+        await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()), view=ModAdminView())
+
+
+class ModDecisaoView(discord.ui.View):
+    def __init__(self, mod):
+        super().__init__(timeout=900)
+        self.mod = mod
+
+    @discord.ui.button(label="Aprovar", emoji="✅", style=discord.ButtonStyle.success)
+    async def aprovar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem moderar mods.", ephemeral=True); return
+        with db() as conn:
+            conn.execute("UPDATE mods SET status='aprovado' WHERE id=?", (self.mod["id"],))
+        await interaction.response.edit_message(embed=discord.Embed(title="✅ Mod aprovado", description=f"**{self.mod['mod_nome']}** já aparece no catálogo de mods.", color=discord.Color.green()), attachments=[], view=ModPendentesView())
+
+    @discord.ui.button(label="Rejeitar", emoji="❌", style=discord.ButtonStyle.danger)
+    async def rejeitar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem moderar mods.", ephemeral=True); return
+        with db() as conn:
+            conn.execute("DELETE FROM mods WHERE id=?", (self.mod["id"],))
+        apagar_arquivo(self.mod["imagem"])
+        await interaction.response.edit_message(embed=discord.Embed(title="❌ Mod rejeitado", description=f"**{self.mod['mod_nome']}** foi removido dos envios.", color=discord.Color.red()), attachments=[], view=ModPendentesView())
+
+
 class ModAdminView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=900)
@@ -1197,7 +1283,7 @@ class ModAdminView(discord.ui.View):
         if not eh_admin(interaction):
             await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
             return
-        await interaction.response.send_modal(AdicionarModModal())
+        await interaction.response.send_modal(AdicionarModModal(publico=False))
 
     @discord.ui.button(label="Editar mod", emoji="✏️", style=discord.ButtonStyle.primary, row=0)
     async def editar(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1205,6 +1291,14 @@ class ModAdminView(discord.ui.View):
             await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
             return
         v = ModAdminListView("editar")
+        await interaction.response.edit_message(embed=v.embed(), view=v)
+
+    @discord.ui.button(label="Pendentes", emoji="📥", style=discord.ButtonStyle.secondary, row=1)
+    async def pendentes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem moderar mods.", ephemeral=True)
+            return
+        v = ModPendentesView()
         await interaction.response.edit_message(embed=v.embed(), view=v)
 
     @discord.ui.button(label="Remover mod", emoji="🗑️", style=discord.ButtonStyle.danger, row=0)
@@ -1249,12 +1343,18 @@ async def mods(interaction: discord.Interaction):
     await interaction.response.send_message(**kwargs)
 
 
+@tree.command(name="enviarmod", description="Envia um mod para aprovação da moderação")
+@app_commands.guild_only()
+async def enviarmod(interaction: discord.Interaction):
+    await interaction.response.send_modal(AdicionarModModal(publico=True))
+
+
 @tree.command(name="adicionarmod", description="[Admin] Cadastra um mod no catálogo separado")
 @app_commands.guild_only()
 @app_commands.default_permissions(manage_guild=True)
 @app_commands.checks.has_permissions(manage_guild=True)
 async def adicionarmod(interaction: discord.Interaction):
-    await interaction.response.send_modal(AdicionarModModal())
+    await interaction.response.send_modal(AdicionarModModal(publico=False))
 
 
 @tree.error

@@ -1,9 +1,11 @@
-CORREÇÃO DE INDENTAÇÃO DO BOT
+Atualização: envio público de mods com moderação.
 
-1. Substitua o arquivo bot.py do repositório inteiro pelo bot.py deste pacote.
-2. Não cole apenas um trecho e não edite manualmente a linha 96.
-3. Faça commit na branch main e aguarde o deploy.
-4. Mantenha jogos.db, pastas de capas e variáveis de ambiente existentes.
+Comandos:
+/catalogo - publica a mensagem principal com botões de jogos e mods
+/mods - abre o catálogo público de mods aprovados
+/enviarmod - qualquer usuário pode enviar um mod para aprovação
+/painelmods - painel administrativo, incluindo a fila Pendentes
+/adicionarmod - cadastro direto de mod por administrador
 
-O bot.py deste pacote passou por compilação sintática com Python.
-Se o log continuar mostrando o mesmo erro na linha 96, o deploy está usando outro arquivo/commit ou o arquivo foi colado incorretamente.
+Substitua o bot.py no repositório. Preserve jogos.db, capas, capas_mods e as variáveis de ambiente.
+O canal de avisos pode ser configurado no painel Admin do catálogo de jogos; os avisos de mods usam o mesmo canal.
