@@ -1433,12 +1433,21 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         self.add_view(MainView())
         await self.add_cog(GameNewsCog(self))
-        if GUILD_ID:
-            guild = discord.Object(id=int(GUILD_ID))
+
+        # Registra os comandos slash e mostra no log exatamente onde foram sincronizados.
+        # Configure GUILD_ID com o ID NUMÉRICO do servidor para sincronização imediata.
+        if GUILD_ID and GUILD_ID.strip():
+            guild_id = int(GUILD_ID.strip())
+            guild = discord.Object(id=guild_id)
             self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
+            synced = await self.tree.sync(guild=guild)
+            names = ", ".join(sorted(command.name for command in synced))
+            print(f"[slash] Sincronizados {len(synced)} comandos no servidor {guild_id}: {names}")
         else:
-            await self.tree.sync()
+            synced = await self.tree.sync()
+            names = ", ".join(sorted(command.name for command in synced))
+            print(f"[slash] Sincronizados {len(synced)} comandos GLOBALMENTE: {names}")
+            print("[slash] Sem GUILD_ID: comandos novos podem demorar para aparecer. Configure o ID do servidor para testar.")
 
 
 bot = Bot()
