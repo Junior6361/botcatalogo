@@ -1067,6 +1067,145 @@ class AdicionarModModal(discord.ui.Modal, title="Cadastrar mod"):
         )
 
 
+# ------------------------------------------------------------------ administração de mods
+
+class ModAdminSelect(discord.ui.Select):
+    def __init__(self, action, rows):
+        self.action = action
+        opts = [discord.SelectOption(label=f"{r['mod_nome']}"[:100], value=str(r['id']),
+                                     description=f"Jogo: {r['jogo_nome']}"[:100], emoji="🧩") for r in rows]
+        super().__init__(placeholder="Selecione o mod", options=opts, row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
+            return
+        mod = get_mod(int(self.values[0]))
+        if not mod:
+            await interaction.response.send_message("Esse mod não existe mais.", ephemeral=True)
+            return
+        if self.action == "editar":
+            await interaction.response.send_modal(EditarModModal(mod))
+        else:
+            view = ConfirmarRemocaoModView(mod)
+            emb = discord.Embed(title="Remover mod?", description=f"**{mod['mod_nome']}**\nJogo: {mod['jogo_nome']}\n\nEssa ação não pode ser desfeita.", color=discord.Color.red())
+            await interaction.response.edit_message(embed=emb, view=view)
+
+
+class ModAdminListView(discord.ui.View):
+    def __init__(self, action, page=0):
+        super().__init__(timeout=900)
+        self.action, self.page = action, page
+        with db() as conn:
+            self.total = conn.execute("SELECT COUNT(*) FROM mods").fetchone()[0]
+            self.rows = conn.execute("SELECT id, jogo_nome, mod_nome FROM mods ORDER BY jogo_nome COLLATE NOCASE, mod_nome COLLATE NOCASE LIMIT ? OFFSET ?", (25, page * 25)).fetchall()
+        if self.rows:
+            self.add_item(ModAdminSelect(action, self.rows))
+        if page > 0:
+            b = discord.ui.Button(label="Anterior", emoji="⬅️", row=1)
+            b.callback = self.anterior
+            self.add_item(b)
+        if (page + 1) * 25 < self.total:
+            b = discord.ui.Button(label="Próxima", emoji="➡️", row=1)
+            b.callback = self.proxima
+            self.add_item(b)
+        b = discord.ui.Button(label="Painel de mods", emoji="⬅️", style=discord.ButtonStyle.secondary, row=1)
+        b.callback = self.voltar
+        self.add_item(b)
+
+    def embed(self):
+        verbo = "editar" if self.action == "editar" else "remover"
+        desc = "Selecione o mod que deseja " + verbo + "." if self.rows else "Nenhum mod cadastrado."
+        return discord.Embed(title=f"🧩 {verbo.capitalize()} mod", description=desc, color=discord.Color.dark_teal())
+
+    async def anterior(self, interaction):
+        v = ModAdminListView(self.action, self.page - 1)
+        await interaction.response.edit_message(embed=v.embed(), view=v)
+
+    async def proxima(self, interaction):
+        v = ModAdminListView(self.action, self.page + 1)
+        await interaction.response.edit_message(embed=v.embed(), view=v)
+
+    async def voltar(self, interaction):
+        await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()), view=ModAdminView())
+
+
+class EditarModModal(discord.ui.Modal):
+    def __init__(self, mod):
+        super().__init__(title=f"Editar mod: {mod['mod_nome']}"[:45])
+        self.mod_id = mod['id']
+        self.mod = mod
+        self.jogo_nome = discord.ui.TextInput(label="Nome do jogo", max_length=100, default=mod['jogo_nome'])
+        self.mod_nome = discord.ui.TextInput(label="Nome do mod", max_length=100, default=mod['mod_nome'])
+        self.descricao = discord.ui.TextInput(label="Descrição", style=discord.TextStyle.paragraph, required=True, max_length=1500, default=(mod['descricao'] or '')[:1500])
+        self.link = discord.ui.TextInput(label="Link do mod", max_length=500, default=mod['link'])
+        self.add_item(self.jogo_nome)
+        self.add_item(self.mod_nome)
+        self.add_item(self.descricao)
+        self.add_item(self.link)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem editar mods.", ephemeral=True)
+            return
+        link = self.link.value.strip()
+        erro = validar_links(link=link)
+        if erro:
+            await interaction.response.send_message(erro, ephemeral=True)
+            return
+        with db() as conn:
+            conn.execute("UPDATE mods SET jogo_nome=?, mod_nome=?, descricao=?, link=? WHERE id=?", (self.jogo_nome.value.strip(), self.mod_nome.value.strip(), self.descricao.value.strip(), link, self.mod_id))
+        await interaction.response.send_message(f"✅ Mod **{self.mod_nome.value.strip()}** atualizado. Para trocar a imagem, remova e cadastre novamente com a nova capa.", ephemeral=True)
+
+
+class ConfirmarRemocaoModView(discord.ui.View):
+    def __init__(self, mod):
+        super().__init__(timeout=120)
+        self.mod = mod
+
+    @discord.ui.button(label="Confirmar remoção", emoji="🗑️", style=discord.ButtonStyle.danger)
+    async def confirmar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem remover mods.", ephemeral=True)
+            return
+        with db() as conn:
+            conn.execute("DELETE FROM mods WHERE id=?", (self.mod['id'],))
+        apagar_arquivo(self.mod['imagem'])
+        await interaction.response.edit_message(embed=discord.Embed(title="Mod removido", description=f"**{self.mod['mod_nome']}** foi removido do catálogo de mods.", color=discord.Color.red()), view=ModAdminView())
+
+    @discord.ui.button(label="Cancelar", emoji="↩️", style=discord.ButtonStyle.secondary)
+    async def cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()), view=ModAdminView())
+
+
+class ModAdminView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=900)
+
+    @discord.ui.button(label="Adicionar mod", emoji="➕", style=discord.ButtonStyle.success, row=0)
+    async def adicionar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
+            return
+        await interaction.response.send_modal(AdicionarModModal())
+
+    @discord.ui.button(label="Editar mod", emoji="✏️", style=discord.ButtonStyle.primary, row=0)
+    async def editar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
+            return
+        v = ModAdminListView("editar")
+        await interaction.response.edit_message(embed=v.embed(), view=v)
+
+    @discord.ui.button(label="Remover mod", emoji="🗑️", style=discord.ButtonStyle.danger, row=0)
+    async def remover(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not eh_admin(interaction):
+            await interaction.response.send_message("⛔ Apenas administradores podem gerenciar mods.", ephemeral=True)
+            return
+        v = ModAdminListView("remover")
+        await interaction.response.edit_message(embed=v.embed(), view=v)
+
+
 # ------------------------------------------------------------------ bot
 
 
@@ -1119,6 +1258,17 @@ async def on_error(interaction: discord.Interaction, error: app_commands.AppComm
         await interaction.followup.send(msg, ephemeral=True)
     else:
         await interaction.response.send_message(msg, ephemeral=True)
+
+
+@tree.command(name="painelmods", description="[Admin] Abre as opções de administração dos mods")
+@app_commands.guild_only()
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(manage_guild=True)
+async def painelmods(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        embed=discord.Embed(title="🧩 Administração de mods", description="Escolha uma opção:", color=discord.Color.dark_teal()),
+        view=ModAdminView(), ephemeral=True,
+    )
 
 
 @tree.command(name="catalogo", description="[Admin] Publica o catálogo de jogos neste canal")
