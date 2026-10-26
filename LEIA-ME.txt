@@ -72,3 +72,8 @@ Observações:
   use /noticias_adicionar_feed com uma URL RSS/Atom validada.
 - O bot não altera nem substitui os recursos existentes de catálogo, busca, envios,
   moderação ou catálogo de mods.
+
+
+CORREÇÃO DE DEPLOY (versão revisada)
+- requirements.txt contém linhas separadas reais para discord.py, Pillow e aiohttp.
+- A classe principal usa commands.Bot, necessário para registrar o Cog do radar sem remover os comandos slash existentes.

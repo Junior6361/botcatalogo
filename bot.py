@@ -30,6 +30,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 import discord
 from discord import app_commands
+from discord.ext import commands
 from news_feed import GameNewsCog  # complemento independente de notícias RSS
 
 TOKEN = os.getenv("DISCORD_TOKEN", "")
@@ -1424,10 +1425,10 @@ class ModAdminView(discord.ui.View):
 # ------------------------------------------------------------------ bot
 
 
-class Bot(discord.Client):
+class Bot(commands.Bot):
     def __init__(self):
-        super().__init__(intents=discord.Intents.default())
-        self.tree = app_commands.CommandTree(self)
+        # commands.Bot mantém a API do Client e permite registrar o Cog adicional de notícias.
+        super().__init__(command_prefix="!", intents=discord.Intents.default())
 
     async def setup_hook(self):
         self.add_view(MainView())
