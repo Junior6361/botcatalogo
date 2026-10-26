@@ -30,6 +30,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 import discord
 from discord import app_commands
+from news_feed import GameNewsCog  # complemento independente de notícias RSS
 
 TOKEN = os.getenv("DISCORD_TOKEN", "")
 GUILD_ID = os.getenv("GUILD_ID")
@@ -1430,6 +1431,7 @@ class Bot(discord.Client):
 
     async def setup_hook(self):
         self.add_view(MainView())
+        await self.add_cog(GameNewsCog(self))
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
             self.tree.copy_global_to(guild=guild)

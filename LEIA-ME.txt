@@ -22,3 +22,53 @@ Instalação / atualização
 5. Execute /catalogo para publicar ou atualizar o painel no canal desejado.
 
 Dependências: discord.py >= 2.7 e Pillow >= 10.0.
+
+
+------------------------------------------------------------
+COMPLEMENTO OPCIONAL: RADAR DE NOTÍCIAS DE GAMES NO DISCORD
+------------------------------------------------------------
+
+Este complemento foi adicionado sem substituir os comandos ou fluxos existentes
+do catálogo de jogos e mods. Ele usa tabelas SQLite separadas e novos comandos slash.
+
+O que faz:
+- Monitora feeds RSS/Atom a cada 5 minutos.
+- Filtra itens com termos relacionados a anúncios, revelações e lançamentos.
+- Publica título, link, descrição e fonte no canal escolhido.
+- Evita duplicatas e não despeja notícias antigas na primeira sincronização.
+- Permite adicionar/remover feeds e testar o canal por comandos de administrador.
+
+Depois de substituir os arquivos pelo pacote atualizado:
+1. Instale dependências: pip install -r requirements.txt
+2. Reinicie o bot.
+3. No Discord, use /noticias_canal e selecione o canal de destino.
+4. Use /noticias_listar_feeds para ver as fontes.
+5. Use /noticias_adicionar_feed para cadastrar outros feeds RSS/Atom HTTPS.
+6. Use /noticias_testar para verificar permissões e publicação.
+7. Use /noticias_status para verificar a configuração.
+
+Comandos adicionados:
+- /noticias_canal
+- /noticias_adicionar_feed
+- /noticias_listar_feeds
+- /noticias_remover_feed
+- /noticias_status
+- /noticias_testar
+
+Permissões:
+O bot precisa de Ver canal, Enviar mensagens, Incorporar links e Ler histórico
+quando aplicável. Os comandos de configuração exigem Gerenciar Servidor.
+
+Observações:
+- A primeira leitura de cada feed serve para sincronizar o histórico; notícias já
+  existentes não são publicadas retroativamente. Apenas itens detectados depois
+  dessa sincronização serão publicados.
+- A frequência real depende do intervalo de 5 minutos, da disponibilidade do feed
+  e da velocidade com que a fonte publica o item. Não é garantia de tempo real.
+- O filtro por palavras-chave pode deixar passar anúncios com títulos incomuns ou
+  excluir matérias que usam esses termos fora do contexto. Ajuste ANNOUNCEMENT_TERMS
+  em news_feed.py se necessário.
+- O feed padrão do Gematsu é incluído como ponto de partida. Se estiver indisponível,
+  use /noticias_adicionar_feed com uma URL RSS/Atom validada.
+- O bot não altera nem substitui os recursos existentes de catálogo, busca, envios,
+  moderação ou catálogo de mods.
