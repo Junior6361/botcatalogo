@@ -1,0 +1,6 @@
+# Nunca suba segredos nem dados locais
+.env
+jogos.db
+capas/
+__pycache__/
+*.pyc
