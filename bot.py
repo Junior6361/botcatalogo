@@ -12,9 +12,9 @@ A mensagem publicada tem 4 botões:
 
 Variáveis de ambiente:
   DISCORD_TOKEN = token do bot
-  GUILD_ID      = (opcional) ID do servidor, para o comando aparecer na hora
+  DATA_DIR      = (opcional) pasta persistente para jogos.db e capas
 
-Instalação:  pip install -U "discord.py>=2.7"
+Instalação:  pip install -r requirements.txt
 Execução:    python bot.py
 """
 import math
@@ -33,8 +33,17 @@ from discord import app_commands
 from discord.ext import commands
 from news_feed import GameNewsCog  # complemento independente de notícias RSS
 
-TOKEN = os.getenv("DISCORD_TOKEN", "")
-GUILD_ID = os.getenv("GUILD_ID")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Pasta dos dados (jogos.db, capas, capas_mods). Padrão: a pasta do bot.
+# Se a hospedagem tiver um volume persistente, aponte DATA_DIR para ele.
+DATA_DIR = os.getenv("DATA_DIR") or BASE_DIR
+os.makedirs(DATA_DIR, exist_ok=True)
+# Os caminhos no banco (ex.: capas/abc.png) são relativos; fixar a pasta de
+# trabalho garante que funcionem não importa de onde a hospedagem inicie o bot.
+os.chdir(DATA_DIR)
+FONT_PATH = os.path.join(BASE_DIR, "fonts", "DejaVuSans.ttf")
+
+TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
 DB_PATH = "jogos.db"
 CAPAS_DIR = "capas"
 MODS_DIR = "capas_mods"
@@ -293,11 +302,14 @@ def criar_grade_capas(rows):
     draw = ImageDraw.Draw(img)
 
     try:
-        fonte_titulo = ImageFont.truetype("DejaVuSans.ttf", 15)
-        fonte_plataforma = ImageFont.truetype("DejaVuSans.ttf", 11)
+        fonte_titulo = ImageFont.truetype(FONT_PATH, 15)
+        fonte_plataforma = ImageFont.truetype(FONT_PATH, 11)
     except OSError:
-        fonte_titulo = ImageFont.load_default()
-        fonte_plataforma = ImageFont.load_default()
+        try:
+            fonte_titulo = ImageFont.load_default(size=15)
+            fonte_plataforma = ImageFont.load_default(size=11)
+        except TypeError:  # Pillow antigo
+            fonte_titulo = fonte_plataforma = ImageFont.load_default()
 
     for i, jogo in enumerate(rows):
         x = margem + (i % colunas) * (largura_capa + espacamento)

@@ -126,3 +126,15 @@ publica os comandos apenas em cada servidor (também ao entrar em um servidor no
 Após o deploy, reinicie o Discord (Ctrl+R) para limpar o cache de comandos do cliente.
 Se ainda houver duplicatas, há outra instância rodando com o mesmo token (ex.: seu PC
 e a hospedagem ao mesmo tempo) — pare a antiga.
+
+
+DEPLOY (GitHub + hospedagem)
+----------------------------
+- GUILD_ID não é mais usado: o bot sincroniza todos os servidores em que está.
+- Variável obrigatória: DISCORD_TOKEN. Opcional: DATA_DIR (pasta persistente para
+  jogos.db, capas e capas_mods; padrão = pasta do bot).
+- Arquivo de inicialização: bot.py (comando: python bot.py).
+- O .gitignore impede subir .env, jogos.db, capas/ e capas_mods/. NUNCA suba o token.
+- Atenção: como os dados não vão ao GitHub, um redeploy que recria a pasta pode apagar
+  jogos.db e as capas. Faça backup periódico ou use DATA_DIR em volume persistente.
+- A fonte fonts/DejaVuSans.ttf (licença livre) é usada nas grades de capas.

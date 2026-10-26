@@ -1,6 +1,12 @@
 # Nunca suba segredos nem dados locais
 .env
+*.env
 jogos.db
+jogos.db-journal
+*.db
 capas/
+capas_mods/
 __pycache__/
 *.pyc
+.venv/
+venv/
