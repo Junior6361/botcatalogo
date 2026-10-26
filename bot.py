@@ -30,7 +30,6 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 import discord
 from discord import app_commands
-from discord.ext import commands
 from news_feed import GameNewsCog  # complemento independente de notícias RSS
 
 TOKEN = os.getenv("DISCORD_TOKEN", "")
@@ -1425,29 +1424,20 @@ class ModAdminView(discord.ui.View):
 # ------------------------------------------------------------------ bot
 
 
-class Bot(commands.Bot):
+class Bot(discord.Client):
     def __init__(self):
-        # commands.Bot mantém a API do Client e permite registrar o Cog adicional de notícias.
-        super().__init__(command_prefix="!", intents=discord.Intents.default())
+        super().__init__(intents=discord.Intents.default())
+        self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
         self.add_view(MainView())
         await self.add_cog(GameNewsCog(self))
-
-        # Registra os comandos slash e mostra no log exatamente onde foram sincronizados.
-        # Configure GUILD_ID com o ID NUMÉRICO do servidor para sincronização imediata.
-        if GUILD_ID and GUILD_ID.strip():
-            guild_id = int(GUILD_ID.strip())
-            guild = discord.Object(id=guild_id)
+        if GUILD_ID:
+            guild = discord.Object(id=int(GUILD_ID))
             self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
-            names = ", ".join(sorted(command.name for command in synced))
-            print(f"[slash] Sincronizados {len(synced)} comandos no servidor {guild_id}: {names}")
+            await self.tree.sync(guild=guild)
         else:
-            synced = await self.tree.sync()
-            names = ", ".join(sorted(command.name for command in synced))
-            print(f"[slash] Sincronizados {len(synced)} comandos GLOBALMENTE: {names}")
-            print("[slash] Sem GUILD_ID: comandos novos podem demorar para aparecer. Configure o ID do servidor para testar.")
+            await self.tree.sync()
 
 
 bot = Bot()
