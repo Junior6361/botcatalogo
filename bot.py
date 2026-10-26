@@ -1433,12 +1433,30 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         self.add_view(MainView())
         await self.add_cog(GameNewsCog(self))
-        if GUILD_ID:
-            guild = discord.Object(id=int(GUILD_ID))
+
+        # Evita comandos duplicados: o Discord pode mostrar uma cópia global e outra
+        # específica do servidor ao mesmo tempo. Com GUILD_ID, mantemos os comandos
+        # apenas no servidor configurado e removemos a cópia global antiga.
+        if GUILD_ID and GUILD_ID.strip():
+            guild_id = int(GUILD_ID.strip())
+            guild = discord.Object(id=guild_id)
+
+            # Copia os comandos carregados, incluindo os do Cog de notícias, para o servidor.
             self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-        else:
+            synced = await self.tree.sync(guild=guild)
+            names = ", ".join(sorted(command.name for command in synced))
+            print(f"[slash] Sincronizados {len(synced)} comandos no servidor {guild_id}: {names}")
+
+            # Remove os comandos globais antigos do Discord. As cópias específicas
+            # do servidor já foram sincronizadas acima e continuam ativas.
+            self.tree.clear_commands(guild=None)
             await self.tree.sync()
+            print("[slash] Cópias globais removidas para evitar duplicação; comandos ativos no servidor configurado.")
+        else:
+            synced = await self.tree.sync()
+            names = ", ".join(sorted(command.name for command in synced))
+            print(f"[slash] Sincronizados {len(synced)} comandos GLOBALMENTE: {names}")
+            print("[slash] AVISO: sem GUILD_ID, comandos globais são usados. Se ainda existirem cópias antigas específicas de servidor, configure GUILD_ID para limpá-las.")
 
 
 bot = Bot()

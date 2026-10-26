@@ -77,3 +77,33 @@ Observações:
 CORREÇÃO DE DEPLOY (versão revisada)
 - requirements.txt contém linhas separadas reais para discord.py, Pillow e aiohttp.
 - A classe principal usa commands.Bot, necessário para registrar o Cog do radar sem remover os comandos slash existentes.
+
+
+DIAGNÓSTICO: COMANDOS /noticias_* NÃO APARECEM
+
+1. Na hospedagem, abra Environment Variables/Variáveis de ambiente.
+2. Configure GUILD_ID com o ID NUMÉRICO do seu servidor Discord (sem aspas).
+   Para copiar: ative o Modo de Desenvolvedor no Discord; clique com o botão
+   direito no ícone do servidor e escolha Copiar ID do servidor.
+3. Confira que o bot foi convidado com os escopos bot E applications.commands.
+4. Faça commit e push deste bot.py e dos arquivos news_feed.py e requirements.txt
+   no branch que a hospedagem realmente implanta; depois faça restart/redeploy.
+5. Veja os logs de inicialização. Deve aparecer uma linha começando com:
+   [slash] Sincronizados ... comandos no servidor ...
+   Confirme se a lista inclui noticias_canal, noticias_testar e outros noticias_*.
+6. Os comandos de notícia estão restritos a usuários com a permissão
+   Gerenciar Servidor/Manage Server. Teste com uma conta que tenha essa permissão.
+7. Se os nomes noticias_* não constarem no log, veja se news_feed.py está no mesmo
+   diretório de bot.py e envie o erro completo do log de inicialização.
+
+Atenção: configurar GUILD_ID na hospedagem não altera o token nem os dados do catálogo.
+Use sempre o ID do servidor correto. Não publique DISCORD_TOKEN em logs ou capturas.
+
+
+CORREÇÃO DE COMANDOS DUPLICADOS
+-------------------------------
+Configure GUILD_ID na hospedagem com o ID numérico do servidor Discord e faça
+novo deploy. O bot sincroniza os comandos naquele servidor e remove as cópias
+globais antigas. Isso evita aparecerem duas entradas de cada comando.
+Se comandos duplicados persistirem, confira se a hospedagem executa este bot
+com o mesmo ID de aplicação e se GUILD_ID corresponde ao servidor correto.
