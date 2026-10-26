@@ -21,6 +21,9 @@ import math
 import os
 import sqlite3
 import uuid
+import re
+import unicodedata
+from difflib import SequenceMatcher
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -108,6 +111,10 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'aprovado',
             autor_id INTEGER,
             criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS nomes_jogos_alias (
+            alias_normalizado TEXT PRIMARY KEY,
+            nome_canonico TEXT NOT NULL
         )""")
         colunas_mods = {r[1] for r in conn.execute("PRAGMA table_info(mods)")}
         for coluna, ddl in (("status", "TEXT NOT NULL DEFAULT 'aprovado'"), ("autor_id", "INTEGER")):
@@ -884,17 +891,17 @@ class MainView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)  # não expira; continua funcionando após reiniciar o bot
 
-    @discord.ui.button(label="Ver catálogo", emoji="📚", style=discord.ButtonStyle.primary, custom_id="catalogo:ver")
+    @discord.ui.button(label="Catálogo de jogos", emoji="📚", style=discord.ButtonStyle.primary, custom_id="catalogo:ver", row=0)
     async def ver(self, interaction: discord.Interaction, button: discord.ui.Button):
         v = CatalogView()
         emb, file = v.render()
         await interaction.response.send_message(embed=emb, file=file, view=v, ephemeral=True)
 
-    @discord.ui.button(label="Buscar jogo", emoji="🔎", style=discord.ButtonStyle.secondary, custom_id="catalogo:buscar")
+    @discord.ui.button(label="Buscar jogo", emoji="🔎", style=discord.ButtonStyle.secondary, custom_id="catalogo:buscar", row=1)
     async def buscar(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(BuscaModal())
 
-    @discord.ui.button(label="Enviar jogo", emoji="📤", style=discord.ButtonStyle.success, custom_id="catalogo:enviar")
+    @discord.ui.button(label="Enviar jogo", emoji="📤", style=discord.ButtonStyle.success, custom_id="catalogo:enviar", row=1)
     async def enviar(self, interaction: discord.Interaction, button: discord.ui.Button):
         emb = discord.Embed(
             title="📤 Enviar um jogo",
@@ -907,11 +914,11 @@ class MainView(discord.ui.View):
         )
         await interaction.response.send_message(embed=emb, view=PlataformaPickView(publico=True), ephemeral=True)
 
-    @discord.ui.button(label="Enviar mod", emoji="📤", style=discord.ButtonStyle.success, custom_id="catalogo:enviarmod")
+    @discord.ui.button(label="Enviar mod", emoji="📤", style=discord.ButtonStyle.success, custom_id="catalogo:enviarmod", row=1)
     async def enviar_mod(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AdicionarModModal(publico=True))
 
-    @discord.ui.button(label="Catálogo de mods", emoji="🧩", style=discord.ButtonStyle.primary, custom_id="catalogo:mods")
+    @discord.ui.button(label="Catálogo de mods", emoji="🧩", style=discord.ButtonStyle.primary, custom_id="catalogo:mods", row=0)
     async def abrir_mods(self, interaction: discord.Interaction, button: discord.ui.Button):
         v = ModsCatalogView()
         emb, file = v.render()
@@ -920,7 +927,7 @@ class MainView(discord.ui.View):
             kwargs["file"] = file
         await interaction.response.send_message(**kwargs, ephemeral=True)
 
-    @discord.ui.button(label="Admin", emoji="🛠", style=discord.ButtonStyle.secondary, custom_id="catalogo:admin")
+    @discord.ui.button(label="Admin", emoji="🛠", style=discord.ButtonStyle.secondary, custom_id="catalogo:admin", row=2)
     async def admin(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not eh_admin(interaction):
             await interaction.response.send_message("⛔ Só administradores (permissão **Gerenciar Servidor**).", ephemeral=True)
@@ -930,6 +937,58 @@ class MainView(discord.ui.View):
 
 
 # ------------------------------------------------------------------ catálogo separado de mods
+
+
+def normalizar_nome_jogo(nome):
+    """Normaliza nomes para comparação local, sem IA ou serviços externos."""
+    texto = unicodedata.normalize("NFKD", (nome or "").casefold())
+    texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return " ".join(texto.split())
+
+
+def resolver_nome_jogo(nome, incluir_pendentes=False):
+    """Retorna nome já usado quando há correspondência exata ou aproximada confiável."""
+    original = " ".join((nome or "").strip().split())
+    chave = normalizar_nome_jogo(original)
+    if not chave:
+        return original
+    with db() as conn:
+        alias = conn.execute(
+            "SELECT nome_canonico FROM nomes_jogos_alias WHERE alias_normalizado = ?", (chave,)
+        ).fetchone()
+        if alias:
+            return alias["nome_canonico"]
+        status_clause = "" if incluir_pendentes else "WHERE status = 'aprovado'"
+        nomes = [r[0] for r in conn.execute(
+            f"SELECT jogo_nome FROM mods {status_clause} UNION SELECT nome FROM jogos WHERE status = 'aprovado'"
+        ).fetchall()]
+    unicos = {}
+    for candidato in nomes:
+        canon = " ".join((candidato or "").strip().split())
+        norm = normalizar_nome_jogo(canon)
+        if norm:
+            unicos.setdefault(norm, canon)
+    if chave in unicos:
+        canon = unicos[chave]
+    else:
+        # Tolerância conservadora para erros de digitação; nomes curtos exigem correspondência exata.
+        melhor_norm, melhor_score = None, 0.0
+        for norm in unicos:
+            if min(len(chave), len(norm)) < 6:
+                continue
+            score = SequenceMatcher(None, chave, norm).ratio()
+            if score > melhor_score:
+                melhor_norm, melhor_score = norm, score
+        canon = unicos[melhor_norm] if melhor_norm and melhor_score >= 0.88 else original
+    # Salva a grafia alternativa para reutilizá-la nas próximas submissões.
+    if normalizar_nome_jogo(canon) != chave:
+        with db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO nomes_jogos_alias (alias_normalizado, nome_canonico) VALUES (?, ?)",
+                (chave, canon),
+            )
+    return canon
 
 
 def listar_mods(query=None, page=0):
@@ -1089,16 +1148,20 @@ class AdicionarModModal(discord.ui.Modal):
         except Exception:
             await interaction.response.send_message("Não consegui salvar a imagem.", ephemeral=True)
             return
+        jogo_informado = " ".join(self.jogo_nome.value.strip().split())
+        jogo_canonico = resolver_nome_jogo(jogo_informado, incluir_pendentes=self.publico)
         with db() as conn:
             cur = conn.execute(
                 "INSERT INTO mods (jogo_nome, mod_nome, descricao, imagem, link, status, autor_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (self.jogo_nome.value.strip(), self.mod_nome.value.strip(), self.descricao.value.strip(), path, link,
+                (jogo_canonico, self.mod_nome.value.strip(), self.descricao.value.strip(), path, link,
                  "pendente" if self.publico else "aprovado", interaction.user.id),
             )
             mod_id = cur.lastrowid
         if self.publico:
             await interaction.response.send_message(
-                f"✅ Seu mod **{self.mod_nome.value.strip()}** foi enviado para análise da moderação. Ele aparecerá no catálogo após aprovação.",
+                f"✅ Seu mod **{self.mod_nome.value.strip()}** foi enviado para análise da moderação.\n"
+                f"Jogo identificado como: **{jogo_canonico}**.\n"
+                "Ele aparecerá no catálogo após aprovação.",
                 ephemeral=True,
             )
             canal_id = get_config("canal_avisos")

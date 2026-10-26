@@ -1,14 +1,10 @@
-CATÁLOGO DISCORD — PAINÉIS ORGANIZADOS
+Atualização da organização dos botões do catálogo.
 
-1. Substitua o bot.py atual por este arquivo no repositório.
-2. Preserve o banco jogos.db, as pastas capas e capas_mods e as variáveis de ambiente.
-3. Faça commit na branch main e aguarde o deploy.
-4. No Discord, use /catalogo para publicar a mensagem principal.
+Ordem dos botões:
+Linha 1: Catálogo de jogos | Catálogo de mods
+Linha 2: Buscar jogo | Enviar jogo | Enviar mod
+Linha 3: Admin
 
-Mudanças:
-- Painel administrativo de jogos usa um menu único com ações agrupadas.
-- Painel de mods usa um menu único para adicionar, editar, remover, moderar pendentes e voltar.
-- Os catálogos de jogos e mods continuam separados.
-
-Dependências: discord.py>=2.7 e Pillow>=10.0.
-A sintaxe Python foi validada; teste os fluxos após o deploy.
+Substitua o bot.py do repositório por este arquivo e faça commit na branch main.
+Depois de publicar, execute /catalogo novamente para criar uma nova mensagem com os botões reorganizados. A mensagem antiga não muda sozinha.
+Preserve jogos.db, as pastas de capas e as variáveis de ambiente.
