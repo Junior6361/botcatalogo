@@ -21,6 +21,9 @@ import math
 import os
 import sqlite3
 import uuid
+from io import BytesIO
+
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 import discord
 from discord import app_commands
@@ -29,7 +32,7 @@ TOKEN = os.getenv("DISCORD_TOKEN", "")
 GUILD_ID = os.getenv("GUILD_ID")
 DB_PATH = "jogos.db"
 CAPAS_DIR = "capas"
-PAGE_SIZE = 8
+PAGE_SIZE = 8  # 4 colunas x 2 linhas na grade visual
 MAX_CAPA_BYTES = 8 * 1024 * 1024
 MAX_PENDENTES_POR_USUARIO = 3
 
@@ -117,7 +120,7 @@ def listar(plataforma=None, query=None, page=0, status="aprovado"):
     with db() as conn:
         total = conn.execute(f"SELECT COUNT(*) FROM jogos {clause}", params).fetchone()[0]
         rows = conn.execute(
-            f"SELECT id, nome, plataforma FROM jogos {clause} "
+            f"SELECT id, nome, plataforma, capa FROM jogos {clause} "
             "ORDER BY nome COLLATE NOCASE LIMIT ? OFFSET ?",
             params + [PAGE_SIZE, page * PAGE_SIZE],
         ).fetchall()
@@ -236,6 +239,64 @@ def send_kwargs(emb, file, view):
     return dict(embed=emb, view=view, **({"file": file} if file else {}))
 
 
+# ------------------------------------------------------------------ grade visual do catálogo
+
+
+def criar_grade_capas(rows):
+    """Monta uma grade 4x2 com capas e nomes para anexar à mensagem do Discord."""
+    largura_capa, altura_capa = 180, 240
+    margem, espacamento, faixa_titulo = 18, 14, 58
+    colunas = 4
+    linhas = max(1, math.ceil(len(rows) / colunas))
+    largura = margem * 2 + colunas * largura_capa + (colunas - 1) * espacamento
+    altura_cartao = altura_capa + faixa_titulo
+    altura = margem * 2 + linhas * altura_cartao + (linhas - 1) * espacamento
+    fundo = (32, 34, 39)
+    cartao = (45, 48, 54)
+    img = Image.new("RGB", (largura, altura), fundo)
+    draw = ImageDraw.Draw(img)
+
+    try:
+        fonte_titulo = ImageFont.truetype("DejaVuSans.ttf", 15)
+        fonte_plataforma = ImageFont.truetype("DejaVuSans.ttf", 11)
+    except OSError:
+        fonte_titulo = ImageFont.load_default()
+        fonte_plataforma = ImageFont.load_default()
+
+    for i, jogo in enumerate(rows):
+        x = margem + (i % colunas) * (largura_capa + espacamento)
+        y = margem + (i // colunas) * (altura_cartao + espacamento)
+        draw.rounded_rectangle((x, y, x + largura_capa, y + altura_cartao), radius=8, fill=cartao)
+        capa_path = jogo["capa"]
+        try:
+            if capa_path and os.path.isfile(capa_path):
+                with Image.open(capa_path) as original:
+                    capa = ImageOps.fit(original.convert("RGB"), (largura_capa, altura_capa), method=Image.Resampling.LANCZOS)
+            else:
+                capa = Image.new("RGB", (largura_capa, altura_capa), (24, 26, 31))
+                placeholder = ImageDraw.Draw(capa)
+                placeholder.text((largura_capa // 2, altura_capa // 2), "SEM CAPA", anchor="mm", fill=(190, 190, 190), font=fonte_titulo)
+        except (OSError, ValueError):
+            capa = Image.new("RGB", (largura_capa, altura_capa), (24, 26, 31))
+            ImageDraw.Draw(capa).text((largura_capa // 2, altura_capa // 2), "CAPA INVÁLIDA", anchor="mm", fill=(190, 190, 190), font=fonte_plataforma)
+        img.paste(capa, (x, y))
+
+        nome = str(jogo["nome"])
+        max_chars = 23
+        if len(nome) > max_chars:
+            nome = nome[:max_chars - 1].rstrip() + "…"
+        draw.text((x + 8, y + altura_capa + 7), nome, fill=(255, 255, 255), font=fonte_titulo)
+        plataforma = str(jogo["plataforma"])
+        if len(plataforma) > 27:
+            plataforma = plataforma[:26] + "…"
+        draw.text((x + 8, y + altura_capa + 32), plataforma, fill=(185, 190, 198), font=fonte_plataforma)
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    buffer.seek(0)
+    return discord.File(buffer, filename="catalogo.png")
+
+
 # ------------------------------------------------------------------ catálogo (navegação)
 
 
@@ -339,30 +400,47 @@ class CatalogView(discord.ui.View):
         if self.mode != "ver":
             self.add_item(PainelButton())
 
-    def embed(self):
+    def render(self):
         pages = max(1, math.ceil(self.total / PAGE_SIZE))
         titulo = self.TITULOS[self.mode]
         if self.query:
             titulo += f" • busca: {self.query}"
         if self.plataforma:
             titulo += f" • {self.plataforma}"
-        if self.rows:
+
+        file = None
+        if self.mode == "ver":
+            if self.rows:
+                desc = "Selecione um jogo no menu abaixo para abrir a ficha completa. Use o filtro de plataforma e os botões para navegar."
+                file = criar_grade_capas(self.rows)
+            else:
+                desc = "Nenhum jogo encontrado. Tente outra busca ou plataforma."
+        elif self.mode == "pendentes" and not self.rows:
+            desc = "Nenhum envio aguardando aprovação."
+        elif self.rows:
             desc = "\n".join(
                 f"{PLATAFORMAS.get(r['plataforma'], '🎮')} **{r['nome']}** — {r['plataforma']}" for r in self.rows
             )
-            if self.mode == "ver":
-                desc += "\n\nEscolha um jogo no menu abaixo para ver a capa e o download."
-        elif self.mode == "pendentes":
-            desc = "Nenhum envio aguardando aprovação 🎉"
         else:
             desc = "Nenhum jogo encontrado."
+
         emb = discord.Embed(title=titulo, description=desc, color=discord.Color.blurple())
+        if file:
+            emb.set_image(url="attachment://catalogo.png")
         emb.set_footer(text=f"Página {self.page + 1}/{pages} • {self.total} jogo(s)")
+        return emb, file
+
+    def embed(self):
+        # Compatibilidade para os modos administrativos, que não usam a grade anexada.
+        emb, _ = self.render()
         return emb
 
     async def atualizar(self, interaction: discord.Interaction):
         self.build()
-        await interaction.response.edit_message(embed=self.embed(), attachments=[], view=self)
+        emb, file = self.render()
+        await interaction.response.edit_message(
+            embed=emb, attachments=[file] if file else [], view=self
+        )
 
 
 class DetalheView(discord.ui.View):
@@ -377,7 +455,8 @@ class DetalheView(discord.ui.View):
 
     async def voltar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
-        await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        emb, file = v.render()
+        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
 
 
 # ------------------------------------------------------------------ busca
@@ -396,7 +475,10 @@ class BuscaModal(discord.ui.Modal, title="Buscar jogo"):
                 ephemeral=True, **send_kwargs(emb, file, DetalheView(jogo, v.estado()))
             )
         else:
-            await interaction.response.send_message(embed=v.embed(), view=v, ephemeral=True)
+            emb, file = v.render()
+            await interaction.response.send_message(
+                embed=emb, file=file, view=v, ephemeral=True
+            )
 
 
 # ------------------------------------------------------------------ enviar / adicionar jogo
@@ -520,7 +602,8 @@ class VoltarPendentesView(discord.ui.View):
 
     async def voltar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
-        await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        emb, file = v.render()
+        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
 
 
 class PendenteView(discord.ui.View):
@@ -565,7 +648,8 @@ class PendenteView(discord.ui.View):
 
     async def voltar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
-        await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        emb, file = v.render()
+        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
 
 
 class CanalView(discord.ui.View):
@@ -672,7 +756,8 @@ class EditarView(discord.ui.View):
 
     async def voltar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
-        await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        emb, file = v.render()
+        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
 
 
 class EditModal(discord.ui.Modal):
@@ -761,7 +846,8 @@ class RemoverView(discord.ui.View):
 
     async def cancelar(self, interaction: discord.Interaction):
         v = CatalogView(**self.estado)
-        await interaction.response.edit_message(embed=v.embed(), attachments=[], view=v)
+        emb, file = v.render()
+        await interaction.response.edit_message(embed=emb, attachments=[file] if file else [], view=v)
 
 
 # ------------------------------------------------------------------ mensagem principal (persistente)
@@ -774,7 +860,8 @@ class MainView(discord.ui.View):
     @discord.ui.button(label="Ver catálogo", emoji="📚", style=discord.ButtonStyle.primary, custom_id="catalogo:ver")
     async def ver(self, interaction: discord.Interaction, button: discord.ui.Button):
         v = CatalogView()
-        await interaction.response.send_message(embed=v.embed(), view=v, ephemeral=True)
+        emb, file = v.render()
+        await interaction.response.send_message(embed=emb, file=file, view=v, ephemeral=True)
 
     @discord.ui.button(label="Buscar jogo", emoji="🔎", style=discord.ButtonStyle.secondary, custom_id="catalogo:buscar")
     async def buscar(self, interaction: discord.Interaction, button: discord.ui.Button):
