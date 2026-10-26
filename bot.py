@@ -237,7 +237,8 @@ def main_embed():
             "Use os botões abaixo:\n\n"
             "📚 **Ver catálogo** – navegue e filtre por plataforma\n"
             "🔎 **Buscar jogo** – procure pelo nome\n"
-            "📤 **Enviar jogo** – sugira um jogo (passa por aprovação da moderação)"
+            "📤 **Enviar jogo** – sugira um jogo (passa por aprovação da moderação)\n"
+            "🧩 **Catálogo de mods** – veja mods separados dos jogos"
         ),
         color=discord.Color.blurple(),
     )
@@ -891,6 +892,15 @@ class MainView(discord.ui.View):
             color=discord.Color.green(),
         )
         await interaction.response.send_message(embed=emb, view=PlataformaPickView(publico=True), ephemeral=True)
+
+    @discord.ui.button(label="Catálogo de mods", emoji="🧩", style=discord.ButtonStyle.primary, custom_id="catalogo:mods")
+    async def abrir_mods(self, interaction: discord.Interaction, button: discord.ui.Button):
+        v = ModsCatalogView()
+        emb, file = v.render()
+        kwargs = {"embed": emb, "view": v}
+        if file:
+            kwargs["file"] = file
+        await interaction.response.send_message(**kwargs, ephemeral=True)
 
     @discord.ui.button(label="Admin", emoji="🛠", style=discord.ButtonStyle.secondary, custom_id="catalogo:admin")
     async def admin(self, interaction: discord.Interaction, button: discord.ui.Button):
